@@ -17,15 +17,15 @@
           <mxGeometry x="240" y="270" width="140" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="ctrl" value="Control unit&#10;LOAD / RUN / STORE&#10;skewed wavefront counter&#10;(7 cycles per RUN)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="ctrl" value="Control unit&#10;LOAD / RUN / STORE&#10;skewed wavefront counter&#10;(8 cycles per RUN)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="450" y="260" width="180" height="110" as="geometry" />
         </mxCell>
 
-        <mxCell id="mema" value="Memory A (activations)&#10;3 rows x 6 INT8&#10;read as INT8 pairs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+        <mxCell id="mema" value="Memory A (activations)&#10;3 rows x 8 INT8&#10;read as INT8 pairs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
           <mxGeometry x="700" y="120" width="180" height="80" as="geometry" />
         </mxCell>
 
-        <mxCell id="memb" value="Memory B (weights)&#10;3 cols x 3 codes {select, e2m1}&#10;= dense 6x3 E2M1 matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+        <mxCell id="memb" value="Memory B (weights)&#10;3 cols x 4 codes {select, e2m1}&#10;= dense 8x3 E2M1 matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
           <mxGeometry x="700" y="430" width="180" height="80" as="geometry" />
         </mxCell>
 
@@ -74,7 +74,7 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="note" value="Sparse weight code: {select, e2m1[3:0]} — the E2M1 value (NVFP4/MXFP4 element, ±{0,0.5,1,1.5,2,3,4,6} in the x2 integer domain) occupies contraction step k = 2j + select of pair slot j; the other step is zero. 9 codes ⇒ dense 6x3 weight matrix at 2.5 bits per dense position. E2M1 magnitudes are (1 or 3) &lt;&lt; shift, so there is no hardware multiplier anywhere." style="text;html=1;whiteSpace=wrap;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="note" value="Sparse weight code: {select, e2m1[3:0]} — the E2M1 value (NVFP4/MXFP4 element, ±{0,0.5,1,1.5,2,3,4,6} in the x2 integer domain) occupies contraction step k = 2j + select of pair slot j; the other step is zero. 12 codes ⇒ dense 8x3 weight matrix at 2.5 bits per dense position (2 sparse RUNs = one NVFP4 16-block). E2M1 magnitudes are (1 or 3) &lt;&lt; shift, so there is no hardware multiplier anywhere." style="text;html=1;whiteSpace=wrap;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="560" height="90" as="geometry" />
         </mxCell>
       </root>

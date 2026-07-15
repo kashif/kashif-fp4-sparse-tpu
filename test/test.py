@@ -4,7 +4,7 @@
 # FP4 sparse mini-TPU tests.
 #
 # The golden model is an INDEPENDENT dense matrix multiply built from
-# first principles (decode {select, e2m1} codes into a dense 6x3 matrix
+# first principles (decode {select, e2m1} codes into a dense 8x3 matrix
 # via the E2M1 value table, then plain C = A @ W) — it shares no
 # structure with the RTL, so it cannot "pass artificially" by mirroring
 # implementation quirks.
@@ -18,7 +18,7 @@ from cocotb.triggers import ClockCycles
 GL_TEST = bool(os.environ.get("GATES") == "yes")
 
 N = 3      # array is N x N
-K = 6      # contraction depth (K/2 = 3 sparse pair slots)
+K = 8      # contraction depth (K/2 = 4 sparse pair slots)
 
 OP_RUN   = 0b01
 OP_LOAD  = 0b10
@@ -72,7 +72,7 @@ def code_decode(code):
 
 
 def decode_weights(wcodes):
-    """9 sparse codes (wcodes[col][slot]) -> dense 6x3 signed matrix."""
+    """12 sparse codes (wcodes[col][slot]) -> dense 8x3 signed matrix."""
     W = [[0] * N for _ in range(K)]
     for c in range(N):
         for j in range(K // 2):
@@ -82,7 +82,7 @@ def decode_weights(wcodes):
 
 
 def golden_matmul(A, wcodes):
-    """C = A (3x6 signed INT8) x dense(W) (6x3). Exact — max |C| = 4608."""
+    """C = A (3x8 signed INT8) x dense(W) (8x3). Exact — max |C| = 6144."""
     W = decode_weights(wcodes)
     return [[sum(A[i][k] * W[k][c] for k in range(K)) for c in range(N)]
             for i in range(N)]
@@ -91,7 +91,7 @@ def golden_matmul(A, wcodes):
 def golden_dense_e2m1(A, wcodes):
     """Dense E2M1 mode: each code's nibble is a weight for ONE step;
     the select bit is ignored and only even activation slots
-    (elements 0, 2, 4) participate (K=3). Exact — max |C| = 4608."""
+    (elements 0, 2, 4, 6) participate (K=4). Exact — max |C| = 6144."""
     return [[sum(A[i][2 * j] * e2m1_decode(wcodes[c][j] & 0xF)
                  for j in range(K // 2))
              for c in range(N)] for i in range(N)]
@@ -116,7 +116,7 @@ async def spi_send(dut, instr):
         await ClockCycles(dut.clk, SCLK_HALF)
     drive(0, 1, 0)                            # CS high between instructions
     # Leave time for the clk-domain data_ready pulse and execution
-    # (a RUN needs 7 cycles; this gap covers it).
+    # (a RUN needs 8 cycles; this gap covers it).
     await ClockCycles(dut.clk, 12)
 
 
@@ -182,13 +182,13 @@ async def test_known_matmul(dut):
     start_clock(dut)
     await hw_reset(dut)
 
-    A = [[100, -128, 3, 45, 0, -2],
-         [0, 17, 22, -33, 1, 127],
-         [-1, -100, 2, 66, -4, 3]]
+    A = [[100, -128, 3, 45, 0, -2, 77, -9],
+         [0, 17, 22, -33, 1, 127, -128, 8],
+         [-1, -100, 2, 66, -4, 3, 19, -45]]
     # wcodes[col][slot] = {select, e2m1}: sel=1 puts the value at k=2j+1
-    wcodes = [[0x03, 0x15, 0x02],   # col 0: W[0]=1.5(3), W[3]=3(6), W[4]=1(2)
-              [0x1E, 0x04, 0x11],   # col 1: W[1]=-4(-8), W[2]=2(4), W[5]=0.5(1)
-              [0x0F, 0x00, 0x17]]   # col 2: W[0]=-6(-12), (zero), W[5]=6(12)
+    wcodes = [[0x03, 0x15, 0x02, 0x1D],  # col 0: W[0]=1.5, W[3]=3, W[4]=1, W[7]=-3
+              [0x1E, 0x04, 0x11, 0x06],  # col 1: W[1]=-4, W[2]=2, W[5]=0.5, W[6]=4
+              [0x0F, 0x00, 0x17, 0x1A]]  # col 2: W[0]=-6, (zero), W[5]=6, W[7]=-1
 
     results = await run_matmul(dut, A, wcodes)
     dut._log.info(f"results: {results}")
@@ -203,15 +203,15 @@ async def test_select_bit_semantics(dut):
     await hw_reset(dut)
 
     # Activations distinct at every k so misrouting is visible
-    A = [[10, 20, 30, 40, 50, 60],
-         [70, -80, -70, -60, -50, -40],
-         [-30, -20, -10, 15, 25, 35]]
+    A = [[10, 20, 30, 40, 50, 60, 70, 80],
+         [70, -80, -70, -60, -50, -40, -30, -20],
+         [-30, -20, -10, 15, 25, 35, 45, 55]]
 
     # Single weight: E2M1 code 5 (= value 6) in col 0 slot 1 (covers k=2,3)
     for sel in (0, 1):
-        wcodes = [[0x00, (sel << 4) | 0x05, 0x00],
-                  [0x00, 0x00, 0x00],
-                  [0x00, 0x00, 0x00]]
+        wcodes = [[0x00, (sel << 4) | 0x05, 0x00, 0x00],
+                  [0x00, 0x00, 0x00, 0x00],
+                  [0x00, 0x00, 0x00, 0x00]]
         results = await run_matmul(dut, A, wcodes)
         for i in range(N):
             expected = 6 * A[i][2 + sel]
@@ -228,10 +228,10 @@ async def test_negative_zero(dut):
     start_clock(dut)
     await hw_reset(dut)
 
-    A = [[127, -128, 99, -99, 55, -55]] * 3
-    wcodes = [[0x08, 0x18, 0x08],   # -0 at every slot, both selects
-              [0x08, 0x18, 0x08],
-              [0x02, 0x08, 0x18]]   # one real weight: W[0]=1(2) in col 2
+    A = [[127, -128, 99, -99, 55, -55, 111, -111]] * 3
+    wcodes = [[0x08, 0x18, 0x08, 0x18],   # -0 at every slot, both selects
+              [0x08, 0x18, 0x08, 0x18],
+              [0x02, 0x08, 0x18, 0x08]]   # one real weight: W[0]=1(2) in col 2
 
     results = await run_matmul(dut, A, wcodes)
     expected = golden_matmul(A, wcodes)
@@ -249,11 +249,11 @@ async def test_not_degenerate(dut):
     start_clock(dut)
     await hw_reset(dut)
 
-    A1 = [[10, 20, 30, 40, 50, 60]] * 3
-    A2 = [[60, 50, 40, 30, 20, 10]] * 3     # same row sums, reversed order
-    wcodes = [[0x01, 0x02, 0x03],           # W[0]=1, W[2]=2, W[4]=3
-              [0x11, 0x12, 0x13],           # W[1]=1, W[3]=2, W[5]=3
-              [0x0C, 0x00, 0x00]]           # W[0]=-4
+    A1 = [[10, 20, 30, 40, 50, 60, 70, 80]] * 3
+    A2 = [[80, 70, 60, 50, 40, 30, 20, 10]] * 3   # same row sums, reversed
+    wcodes = [[0x01, 0x02, 0x03, 0x04],     # W[0]=1, W[2]=2, W[4]=3, W[6]=4
+              [0x11, 0x12, 0x13, 0x14],     # W[1]=1, W[3]=2, W[5]=3, W[7]=4
+              [0x0C, 0x00, 0x00, 0x00]]     # W[0]=-4
 
     r1 = await run_matmul(dut, A1, wcodes)
     r2 = await run_matmul(dut, A2, wcodes)
@@ -270,12 +270,12 @@ async def test_run_clears_accumulators(dut):
     start_clock(dut)
     await hw_reset(dut)
 
-    A = [[11, 12, 21, 22, 31, 32],
-         [41, 42, 51, 52, 61, 62],
-         [-11, -22, -33, -44, -55, -66]]
-    wcodes = [[0x07, 0x17, 0x07],
-              [0x16, 0x06, 0x16],
-              [0x05, 0x15, 0x05]]
+    A = [[11, 12, 21, 22, 31, 32, 41, 42],
+         [41, 42, 51, 52, 61, 62, 71, 72],
+         [-11, -22, -33, -44, -55, -66, -77, -88]]
+    wcodes = [[0x07, 0x17, 0x07, 0x17],
+              [0x16, 0x06, 0x16, 0x06],
+              [0x05, 0x15, 0x05, 0x15]]
 
     expected = golden_matmul(A, wcodes)
     await load_operands(dut, A, wcodes)
@@ -290,22 +290,22 @@ async def test_run_clears_accumulators(dut):
 @cocotb.test()
 async def test_dense_e2m1_mode(dut):
     """Dense E2M1 mode (RUN with dense=1): each code's nibble is a
-    weight for ONE contraction step (K=3, half throughput) — dense
+    weight for ONE contraction step (K=4, half throughput) — dense
     INT8 x E2M1, the format NVFP4 pretraining/inference actually uses.
     Select bits are set to garbage to prove they are ignored, and odd
     activation slots hold garbage to prove they don't participate."""
     start_clock(dut)
     await hw_reset(dut)
 
-    # Real activations at even elements 0,2,4; garbage at odd elements
-    A = [[3, -88, -5, 77, 2, -18],
-         [-7, 55, 6, -18, -1, 7],
-         [4, -3, -128, 6, 127, -2]]
+    # Real activations at even elements 0,2,4,6; garbage at odd elements
+    A = [[3, -88, -5, 77, 2, -18, 9, 66],
+         [-7, 55, 6, -18, -1, 7, -128, -3],
+         [4, -3, -128, 6, 127, -2, 31, 90]]
 
     # Full E2M1 range incl. -0; select bits (0x10) set at random
-    wcodes = [[0x18, 0x07, 0x1F],   # col 0: -0, 6, -6
-              [0x05, 0x1B, 0x00],   # col 1: 3, -1.5, 0
-              [0x0C, 0x02, 0x19]]   # col 2: -2, 1, -0.5
+    wcodes = [[0x18, 0x07, 0x1F, 0x03],  # col 0: -0, 6, -6, 1.5
+              [0x05, 0x1B, 0x00, 0x1E],  # col 1: 3, -1.5, 0, -4
+              [0x0C, 0x02, 0x19, 0x08]]  # col 2: -2, 1, -0.5, -0
 
     results = await run_matmul(dut, A, wcodes, dense=1)
     dut._log.info(f"dense results: {results}")

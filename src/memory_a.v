@@ -1,7 +1,7 @@
 /*
- * Activation memory: 3 rows x 6 INT8 elements (K = 6 contraction depth).
+ * Activation memory: 3 rows x 8 INT8 elements (K = 8 contraction depth).
  *
- * Written one byte at a time (elem 0..5). Read out per row as an
+ * Written one byte at a time (elem 0..7). Read out per row as an
  * INT8 *pair* {A[row][2j+1], A[row][2j]} selected by a 2-bit pair
  * index — the systolic array consumes two contraction steps per cycle
  * in sparse mode. Rows read as 0 when not enabled (feeds zeros
@@ -14,17 +14,17 @@ module memory_a (
     input  wire        clk,
     input  wire        write_enable,
     input  wire [1:0]  write_line,      // row 0..2
-    input  wire [2:0]  write_elem,      // element 0..5
+    input  wire [2:0]  write_elem,      // element 0..7
     input  wire [7:0]  data_in,
     input  wire [2:0]  read_enable,     // per-row
-    input  wire [5:0]  read_pair,       // 2-bit pair index per row (0..2)
+    input  wire [5:0]  read_pair,       // 2-bit pair index per row (0..3)
     output wire [47:0] data_out         // 3 rows x 16-bit pair
 );
 
-    reg [7:0] mem [0:2][0:5];
+    reg [7:0] mem [0:2][0:7];
 
     always @(posedge clk) begin
-        if (write_enable && write_line < 2'd3 && write_elem < 3'd6)
+        if (write_enable && write_line < 2'd3)
             mem[write_line][write_elem] <= data_in;
     end
 

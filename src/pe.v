@@ -33,7 +33,7 @@ module pe (
     input  wire        rst_n,
     input  wire        we,      // shift pipes + accumulate
     input  wire        clr,     // clear accumulator (start of RUN)
-    input  wire        dense,   // 0 = 1:2 sparse (K=6), 1 = dense (K=3)
+    input  wire        dense,   // 0 = 1:2 sparse (K=8), 1 = dense (K=4)
     input  wire [15:0] a_in,    // activation pair {a_odd[7:0], a_even[7:0]}
     input  wire [4:0]  b_in,    // weight code {select, sign, mag[2:0]}
     output wire [15:0] a_out,   // pair passed right
@@ -69,9 +69,9 @@ module pe (
     wire signed [11:0] prod  = (code == 3'd0) ? 12'sd0
                              : (w_sign ? -mag : mag);
 
-    // 3 MAC steps either mode (each sparse code contributes ONE
+    // 4 MAC steps either mode (each sparse code contributes ONE
     // product; the other k of the pair is zero): max |acc| =
-    // 3 * 1536 = 4608 — exact in a 14-bit signed accumulator.
+    // 4 * 1536 = 6144 — exact in a 14-bit signed accumulator.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             a_reg <= 16'd0;

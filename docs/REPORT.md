@@ -4,7 +4,9 @@
 **Target:** Tiny Tapeout TTSKY26c, 2x2 tile, SkyWater SKY130A
 **Top module:** `tt_um_kashif_fp4_sparse_tpu`
 **Clock:** 5 MHz (SPI SCLK <= clk/6)
-**Result:** 7 cocotb tests passing (RTL); CI utilization pending first GDS run
+**Result:** 7 cocotb tests passing (RTL + GL); K=6 baseline measured green
+at 58.3% GPL / 50.0% effective on 2x2; this K=8 revision adds ~63 flops
+(CI utilization pending)
 
 ---
 
@@ -22,15 +24,15 @@ names as its wished-for future format. All with no hardware multiplier.
 | Metric | Value |
 |--------|-------|
 | Array | 3x3 = 9 PEs, output-stationary systolic |
-| Contraction | sparse K = 6 per RUN (dense mode K = 3) |
+| Contraction | sparse K = 8 per RUN (dense mode K = 4); 2 sparse RUNs = one NVFP4 16-block |
 | Weights | 5-bit codes {select, e2m1}: 1:2-sparse E2M1, 2.5 bits/dense position |
 | Activations | INT8 (full -128..127) |
 | Multiplier | None: E2M1 mag = (1\|3) << s, product = conditional 3x add + shift + negate |
-| Accumulator | 14-bit signed, exact (max \|C\| = 4608 both modes) |
+| Accumulator | 14-bit signed, exact (max \|C\| = 6144 both modes) |
 | Block scaling | Host-side: NVFP4 (16/E4M3+FP32), MXFP4 (32/E8M0), 4/6, per-token |
 | Activation functions | Host-side (correct only after cross-tile accumulation) |
 | I/O | SPI, 16-bit instructions, receive-only; results via STORE on uo_out |
-| Wavefront | 7 cycles per RUN (skewed, reference mini-TPU pattern) |
+| Wavefront | 8 cycles per RUN (skewed, reference pattern + one element step) |
 | Tile | 2x2 (utilization TBD from CI) |
 
 ## 3. Architecture
@@ -61,12 +63,18 @@ See `Architecture.drawio` and `Dataflow.drawio`.
   multiplier is replaced by one adder + shifter + negate — E2M1's magnitude
   set is exactly the two-mantissa-values-times-power-of-two structure that
   makes this possible.
-- **5-bit weight memory.** {select, e2m1} stored as-is: 45 flops for a
-  dense-equivalent 6x3 matrix (the Int7+1 chip needed 72 for the same
-  shape).
-- **14-bit exact accumulators.** 3 MAC steps x max |product| 1536 = 4608;
+- **5-bit weight memory.** {select, e2m1} stored as-is: 60 flops for a
+  dense-equivalent 8x3 matrix — 2.5 bits per dense position.
+- **14-bit exact accumulators.** 4 MAC steps x max |product| 1536 = 6144;
   no truncation, so host-side block scaling (incl. four-over-six and
   per-token scales) applies to bit-exact partial sums.
+- **K deepened 6 -> 8 (one extra pair slot).** The initial design
+  inherited K=6 from the reference's 3-element wavefront schedule via the
+  Int7+1 chip. Adding a fourth element step costs only +63 memory flops
+  (measured baseline: 58.3% GPL / 50.0% effective at K=6 on 2x2) and
+  aligns the chip to NVFP4 blocks: 16 = 2 x 8, so two sparse RUNs cover
+  exactly one block and the zero-padding workaround disappears. Max |acc|
+  6144 still fits the 14-bit accumulator, so the datapath is unchanged.
 - **Receive-only SPI** (from the ternary chip): the MISO readback stream
   duplicated the STORE readout path; dropped for area.
 - **2x2 tile from day one.** The Int7+1 chip (similar flop count, bigger
@@ -82,7 +90,7 @@ See `Architecture.drawio` and `Dataflow.drawio`.
 ## 5. Verification
 
 Golden model is an independent dense matmul built from first principles
-(decode {select, e2m1} codes into a dense 6x3 matrix via the E2M1 value
+(decode {select, e2m1} codes into a dense 8x3 matrix via the E2M1 value
 table, then plain Python matrix multiply) — it shares no structure with the
 RTL.
 
@@ -107,7 +115,7 @@ src/
   tpu.v         # control + memories + array + result mux
   spi.v         # 16-bit instruction receiver (receive-only)
   control.v     # LOAD/RUN/STORE decode, skewed wavefront counter
-  memory_a.v    # 3x6 INT8 activation memory, pair reads
+  memory_a.v    # 3x8 INT8 activation memory, pair reads
   memory_b.v    # 3x3 sparse-code weight memory (5-bit)
   array.v       # 3x3 systolic array
   pe.v          # shift-add dual-mode MAC (no multiplier)
@@ -131,14 +139,12 @@ converge on (activations are harder to quantize than weights).
   run at two contraction steps per cycle and 2.5 bits per dense weight
   position.
 - **Arbitrary layer sizes by tiling.** Each RUN computes a 3x3 output tile
-  over K=6 (dense: K=3). The host accumulates partial sums in int32 —
+  over K=8 (dense: K=4). The host accumulates partial sums in int32 —
   bit-exact, since the chip never rounds — then applies block scales, bias,
-  activation, and requantization. Scale groups that are multiples of 6
-  (sparse) or 3 (dense) align at full rate; strict NVFP4-16 / MXFP4-32
-  block boundaries are honored by zero-padding pair slots at the boundary
-  (small throughput cost). Four-over-six adaptive scaling and per-token
-  activation scales are host-side quantizer choices and need no hardware
-  support.
+  activation, and requantization. Block alignment is exact: two sparse
+  RUNs = one NVFP4 16-element block, four = one MXFP4 32-block, with no
+  padding. Four-over-six adaptive scaling and per-token activation scales
+  are host-side quantizer choices and need no hardware support.
 - **A bit-exactness oracle for FP4 kernels.** Because outputs are exact
   E2M1 x INT8 arithmetic, the demo board can verify software GEMM kernels
   and quantizer implementations bit-for-bit against silicon.

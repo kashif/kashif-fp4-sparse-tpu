@@ -17,7 +17,7 @@ module array (
     input  wire         rst_n,
     input  wire         we,
     input  wire         clr,
-    input  wire         dense,    // 0 = 1:2 sparse (K=6), 1 = dense (K=3)
+    input  wire         dense,    // 0 = 1:2 sparse (K=8), 1 = dense (K=4)
 
     input  wire [47:0]  a_in,     // 3 rows x INT8 activation pair
     input  wire [14:0]  b_in,     // 3 cols x 5-bit weight code

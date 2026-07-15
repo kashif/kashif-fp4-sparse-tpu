@@ -29,11 +29,13 @@ contraction steps (k = 2j and k = 2j+1): the E2M1 value sits at
 `k = 2j + select`, the other position is zero — 1:2 structured sparsity,
 the 1:2 analog of NVIDIA's 2:4. The select bit muxes which INT8 activation
 of a pair enters the shift-add, so an 8-bit mux does the work of a second
-"multiplier" and every cycle advances two contraction steps: a 6-deep dot
-product in the time a dense array does 3, with weights stored at 2.5 bits
-per dense position.
+"multiplier" and every cycle advances two contraction steps: an 8-deep dot
+product in the time a dense array does 4, with weights stored at 2.5 bits
+per dense position. **Two sparse RUNs cover exactly one NVFP4 16-element
+block** (four cover an MXFP4 32-block), so host-side block scaling aligns
+with no padding.
 
-Results are exact 14-bit signed integers (max |C| = 4608). Block scaling
+Results are exact 14-bit signed integers (max |C| = 6144). Block scaling
 happens on the host during dequantization, which makes the chip
 element-level format-agnostic: apply E4M3 scales per 16-element block
 (+ FP32 tensor scale) for **NVFP4** semantics, or E8M0 power-of-two scales
@@ -44,7 +46,7 @@ per-token activation scales) to bit-exact partial sums.
 ### Second mode: dense E2M1 x INT8
 
 The RUN instruction's `d` flag switches to **dense** operation: each code's
-E2M1 nibble is a weight for ONE contraction step (K = 3, half throughput,
+E2M1 nibble is a weight for ONE contraction step (K = 4, half throughput,
 select bit ignored, only even activation elements participate) — the same
 trade NVIDIA makes running dense on 2:4-sparse tensor cores. This is plain
 dense FP4-weight x INT8-activation matmul for off-the-shelf
@@ -54,7 +56,7 @@ Architecture, SPI protocol, and skewed-wavefront control follow the proven
 reference mini-TPU
 ([MILOUDIAS/IEEE_ttsky_mini_tpu_spi](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi)):
 activations flow right, weights flow down, both streams change every cycle
-(real dot products), and a full matmul runs in a 7-cycle wavefront.
+(real dot products), and a full matmul runs in an 8-cycle wavefront.
 Activation functions are host-side: they are only correct after cross-tile
 partial-sum accumulation and bias, which happen on the host anyway.
 
@@ -62,14 +64,14 @@ partial-sum accumulation and bias, which happen on the host anyway.
 
 | Instruction | Format (binary)        | Description |
 |-------------|------------------------|-------------|
-| `LOAD A`    | `10 0 rr eee aaaaaaaa` | INT8 activation byte `a` into row `r` (0-2), element `e` (0-5) |
-| `LOAD B`    | `10 1 cc 0jj 000swwww` | Weight code {select `s`, E2M1 `w`} into column `c` (0-2), pair slot `j` (0-2) |
-| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run the wavefront (7 cycles); `d`=0 sparse (K=6), `d`=1 dense E2M1 (K=3) |
+| `LOAD A`    | `10 0 rr eee aaaaaaaa` | INT8 activation byte `a` into row `r` (0-2), element `e` (0-7) |
+| `LOAD B`    | `10 1 cc 0jj 000swwww` | Weight code {select `s`, E2M1 `w`} into column `c` (0-2), pair slot `j` (0-3) |
+| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run the wavefront (8 cycles); `d`=0 sparse (K=8), `d`=1 dense E2M1 (K=4) |
 | `STORE`     | `11 b rr cc 000000000` | Drive byte `b` (0 = acc[7:0], 1 = acc[13:8]) of C[r][c] on `uo_out` |
 
 SCLK must be at most clk/6 (the SPI bit counter crosses clock domains
 unsynchronised, as in the reference). The `ready` pin (uio[1]) pulses when a
-RUN completes; alternatively just wait 7+ clock cycles. The SPI is
+RUN completes; alternatively just wait 8+ clock cycles. The SPI is
 receive-only: all results are read via STORE on `uo_out`.
 
 ### E2M1 weight encoding (element type of NVFP4 and MXFP4)

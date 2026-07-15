@@ -2,8 +2,8 @@
  * 1:2-sparse E2M1 x INT8 mini-TPU core: control + operand memories +
  * 3x3 systolic array + result readout mux.
  *
- * Computes C = A x W with A a 3x6 INT8 activation matrix and W a
- * dense-equivalent 6x3 E2M1 weight matrix stored as 9 five-bit codes
+ * Computes C = A x W with A a 3x8 INT8 activation matrix and W a
+ * dense-equivalent 8x3 E2M1 weight matrix stored as 12 five-bit codes
  * {select, e2m1} (1:2 structured sparsity along the contraction
  * axis). Results are exact 14-bit signed values in the x2 integer
  * domain, read out one byte at a time via STORE.
