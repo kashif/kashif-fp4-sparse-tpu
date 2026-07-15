@@ -1,27 +1,81 @@
 /*
- * Copyright (c) 2024 Your Name
- * SPDX-License-Identifier: Apache-2.0
+ * TT FP4 Sparse Mini-TPU — Tiny Tapeout top level (2x2 tile)
+ *
+ * 3x3 output-stationary systolic array computing C = A x W with
+ * INT8 activations and 1:2-sparse E2M1 (NVFP4/MXFP4 element) weights:
+ * each 5-bit weight code {select, e2m1[3:0]} covers two consecutive
+ * contraction steps, the select bit muxing which INT8 activation of a
+ * pair gets multiplied. There is no hardware multiplier — E2M1
+ * magnitudes are (1 or 3) << shift, so each product is a conditional
+ * 3x add, a shift, and a conditional negate.
+ *
+ * Architecture and SPI protocol follow the proven reference design
+ * (github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi), widened to 16-bit
+ * instructions. See docs/info.md for the ISA.
+ *
+ * Pinout:
+ *   ui_in[0] = MOSI, ui_in[1] = CS (active low), ui_in[2] = SCLK
+ *   uo_out   = result byte (selected by STORE)
+ *   uio[1]   = ready (output), rest unused (SPI is receive-only;
+ *              results are read via STORE on uo_out)
  */
 
 `default_nettype none
 
-module tt_um_example (
-    input  wire [7:0] ui_in,    // Dedicated inputs
-    output wire [7:0] uo_out,   // Dedicated outputs
-    input  wire [7:0] uio_in,   // IOs: Input path
-    output wire [7:0] uio_out,  // IOs: Output path
-    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+module tt_um_kashif_fp4_sparse_tpu (
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out,
+    input  wire [7:0] uio_in,
+    output wire [7:0] uio_out,
+    output wire [7:0] uio_oe,
+    input  wire       ena,
+    input  wire       clk,
+    input  wire       rst_n
 );
 
-  // All output pins must be assigned. If not used, assign to 0.
-  assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-  assign uio_out = 0;
-  assign uio_oe  = 0;
+    wire        mosi = ui_in[0];
+    wire        cs   = ui_in[1];
+    wire        sclk = ui_in[2];
 
-  // List all unused inputs to prevent warnings
-  wire _unused = &{ena, clk, rst_n, 1'b0};
+    wire [15:0] instruction;
+    wire        ready_to_send;
+
+    tpu u_tpu (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .instruction    (instruction),
+        .ready_to_send  (ready_to_send),
+        .result         (uo_out)
+    );
+
+    spi u_spi (
+        .clk                (clk),
+        .rst_n              (rst_n),
+        .mosi               (mosi),
+        .cs                 (cs),
+        .sclk               (sclk),
+        .data_buffer_output (instruction)
+    );
+
+    // Constant pins are driven from two shared (* keep *) flip-flops
+    // instead of per-pin registers or direct constants: constants
+    // synthesize to conb cells whose pulldown nets magic merges with
+    // VGND during extraction, producing LVS mismatches (reference
+    // REPORT.md), and per-pin FFs waste flops. uio[1] = ready out,
+    // everything else stays an input (oe 0).
+    (* keep = "true" *) reg const0_q, const1_q;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            const0_q <= 1'b0;
+            const1_q <= 1'b0;
+        end else begin
+            const0_q <= 1'b0;
+            const1_q <= 1'b1;
+        end
+    end
+    assign uio_oe  = {{6{const0_q}}, const1_q, const0_q};
+    assign uio_out = {{6{const0_q}}, ready_to_send, const0_q};
+
+    wire _unused = &{ena, ui_in[7:3], uio_in, 1'b0};
 
 endmodule
