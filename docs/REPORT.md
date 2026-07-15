@@ -117,7 +117,38 @@ docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
 ```
 
-## 7. Companion Designs
+## 7. What the Chip Can Run
+
+The chip is a W4A8 matmul primitive: 4-bit-float weights x 8-bit-integer
+activations, the asymmetric precision point modern LLM deployment recipes
+converge on (activations are harder to quantize than weights).
+
+- **Off-the-shelf FP4 models (dense mode).** Any NVFP4- or MXFP4-quantized
+  checkpoint maps directly: E2M1 nibbles in, INT8 activations in, exact
+  integer partial sums out. No sparsification needed.
+- **1:2-sparsified FP4 models (sparse mode, 2x).** Weights pruned to 1:2
+  along the contraction axis (Roune's recipe: pair columns, prune+finetune)
+  run at two contraction steps per cycle and 2.5 bits per dense weight
+  position.
+- **Arbitrary layer sizes by tiling.** Each RUN computes a 3x3 output tile
+  over K=6 (dense: K=3). The host accumulates partial sums in int32 —
+  bit-exact, since the chip never rounds — then applies block scales, bias,
+  activation, and requantization. Scale groups that are multiples of 6
+  (sparse) or 3 (dense) align at full rate; strict NVFP4-16 / MXFP4-32
+  block boundaries are honored by zero-padding pair slots at the boundary
+  (small throughput cost). Four-over-six adaptive scaling and per-token
+  activation scales are host-side quantizer choices and need no hardware
+  support.
+- **A bit-exactness oracle for FP4 kernels.** Because outputs are exact
+  E2M1 x INT8 arithmetic, the demo board can verify software GEMM kernels
+  and quantizer implementations bit-for-bit against silicon.
+
+End-to-end demo target (shared with the fleet's pending software pipeline):
+a small MNIST MLP quantized W4A8 with 1:2 weight sparsity, driven over SPI
+by the RP2040 — throughput is SPI-bound, on the order of the int7 chip's
+~0.15 s/digit estimate.
+
+## 8. Companion Designs
 
 - [kashif-int7-sparse-tpu](https://github.com/kashif/kashif-int7-sparse-tpu):
   1:2-sparse Int7 x INT4, native int8 dense mode, 3x3 on 2x2.
