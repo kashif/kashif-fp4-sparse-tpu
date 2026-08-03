@@ -4,9 +4,9 @@
 **Target:** Tiny Tapeout TTSKY26c, 2x2 tile, SkyWater SKY130A
 **Top module:** `tt_um_kashif_fp4_sparse_tpu`
 **Clock:** 5 MHz (SPI SCLK <= clk/6)
-**Result:** 7 cocotb tests passing (RTL + GL); K=6 baseline measured green
+**Result:** 9 cocotb tests passing (RTL + GL); K=6 baseline measured green
 at 58.3% GPL / 50.0% effective on 2x2; this K=8 revision adds ~63 flops
-(CI utilization pending)
+(measured 62.5% GPL / 53.6% effective)
 
 ---
 
@@ -103,6 +103,8 @@ RTL.
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double |
 | `test_dense_e2m1_mode` | Dense mode ignores selects + odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode per trial |
+| `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010): spec-derived NVFP4 quantizer (E4M3 RTN scales, E2M1 RTN values, MSE pick), paper's worked example, exact dequant over 4 dense RUNs |
+| `test_nvfp4_four_over_six_sparse` | Same exactness through the 1:2-sparse path (one 16-block = 2 sparse RUNs) |
 
 Gate-level: `GATES=yes` runs the same suite (3 random trials) against the
 synthesized netlist with VPWR/VGND wiring in `tb.v`.

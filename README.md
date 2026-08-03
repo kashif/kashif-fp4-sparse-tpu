@@ -121,7 +121,7 @@ src/
   pe.v          # shift-add MAC: E2M1 decode, no multiplier
 test/
   tb.v          # Verilog testbench (GL_TEST compatible)
-  test.py       # 7 cocotb tests with independent golden model
+  test.py       # 9 cocotb tests with independent golden model
   Makefile      # icarus/cocotb build
 docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
@@ -130,7 +130,7 @@ info.yaml       # TT metadata: 2x2 tile, 5 MHz, SKY130A
 
 ## Verification
 
-7 cocotb tests drive the SPI interface like an external host and compare all
+9 cocotb tests drive the SPI interface like an external host and compare all
 9 results against an independent golden model:
 
 | Test | Description |
@@ -142,6 +142,8 @@ info.yaml       # TT metadata: 2x2 tile, 5 MHz, SKY130A
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double |
 | `test_dense_e2m1_mode` | Dense mode ignores selects and odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode |
+| `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010) runs on this silicon unchanged: spec-derived NVFP4 quantizer, exact sums, exact dequant |
+| `test_nvfp4_four_over_six_sparse` | Same 4/6 exactness through the 1:2-sparse path (one 16-block = 2 RUNs) |
 
 Gate-level: `GATES=yes` runs the same suite (3 random trials) against the
 synthesized netlist. All flops have async reset, so no warm-up RUN is
@@ -159,7 +161,7 @@ needed after power-up.
 - [OCP Microscaling (MX) Formats spec](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf)
 - [Structured sparsity in NVIDIA Ampere](https://developer.nvidia.com/blog/structured-sparsity-in-the-nvidia-ampere-architecture-and-applications-in-search-engines/)
 - [The 4-bitter Lesson: NVFP4 RL](https://humansand.ai/blog/nvfp4-rl.html) — the asymmetric weight/activation precision motivation
-- [Four Over Six: adaptive NVFP4 block scaling](https://arxiv.org/abs/2512.02010) — host-side compatible with this chip
+- [Four Over Six: adaptive NVFP4 block scaling](https://arxiv.org/abs/2512.02010) — host-side compatible with this chip, validated bit-exactly by the `four_over_six` tests
 - [Mini-TPU v2](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi) — architecture and SPI protocol base
 - Companion designs: [Int7+1 Sparse Mini-TPU](https://github.com/kashif/kashif-int7-sparse-tpu), [NVFP4 Ternary Mini-TPU](https://github.com/kashif/kashif-fp4-ternary-tpu)
 - [TT HDL Guide](https://tinytapeout.com/hdl/) / [TT Tech Specs](https://tinytapeout.com/specs/)

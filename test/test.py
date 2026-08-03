@@ -339,3 +339,191 @@ async def test_random(dut):
         dut._log.info(f"trial {t} OK (dense={dense})")
 
     dut._log.info(f"random test PASSED ({trials} trials)")
+
+
+# ----------------------------------------------------------------------
+# NVFP4 four-over-six quantizer (arXiv:2512.02010), spec-derived
+# ----------------------------------------------------------------------
+# Host-side reference implementation of adaptive block scaling: each
+# 16-element block is quantized twice — decode scale D = e4m3(amax/6)
+# and D = e4m3(amax/4) — and the lower-MSE variant is kept.  Which D
+# was chosen is invisible to the chip: it only ever sees E2M1 codes and
+# returns exact integer partial sums, so 4/6 needs zero RTL support.
+# (The paper's additional FP32 per-tensor scale is one more host-side
+# multiply on the same exact sums; it is omitted here.)
+
+BLOCK = 16                       # NVFP4 block size = 2 sparse RUNs
+
+E2M1_VALS = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]   # code 0..7
+
+
+def _round_nearest(x, table):
+    """Nearest value in a sorted table, ties to the even-mantissa
+    entry (even index — RTN as FP casts do). x must be >= 0."""
+    best, best_err = None, None
+    for idx, v in enumerate(table):
+        err = abs(x - v)
+        if (best_err is None or err < best_err
+                or (err == best_err and idx % 2 == 0)):
+            best, best_err = v, err
+    return best
+
+
+def e4m3_positives():
+    """All positive finite E4M3 values: subnormals m/8 * 2^-6,
+    normals (1+m/8) * 2^(e-7) for e=1..15, code (15,7) is NaN -> max 448."""
+    vals = [m / 8.0 * 2.0 ** -6 for m in range(1, 8)]
+    vals += [(1 + m / 8.0) * 2.0 ** (e - 7)
+             for e in range(1, 16) for m in range(8) if not (e == 15 and m == 7)]
+    return sorted(vals)
+
+
+E4M3_POS = e4m3_positives()
+
+
+def e4m3_quantize(x):
+    """Positive real -> nearest E4M3 value (RTN, saturate at 448)."""
+    assert x > 0
+    return _round_nearest(min(x, E4M3_POS[-1]), E4M3_POS)
+
+
+def e2m1_quantize(x):
+    """Real -> nearest E2M1 value (RTN, ties-to-even, saturate at +/-6)."""
+    mag = _round_nearest(min(abs(x), 6.0), E2M1_VALS)
+    return -mag if x < 0 else mag
+
+
+def e2m1_encode(value):
+    """Exact E2M1 value -> 4-bit {sign, code3} nibble."""
+    code3 = E2M1_MAG.index(int(abs(value) * 2))
+    return (0x8 | code3) if value < 0 else code3
+
+
+def quantize_block(block, M):
+    """One NVFP4 block with decode scale D = e4m3(amax/M). Returns
+    (D, quantized E2M1 values, squared reconstruction error)."""
+    amax = max(abs(v) for v in block)
+    if amax == 0:
+        return 1.0, [0.0] * len(block), 0.0
+    D = e4m3_quantize(amax / M)
+    q = [e2m1_quantize(v / D) for v in block]
+    err = sum((v - D * qi) ** 2 for v, qi in zip(block, q))
+    return D, q, err
+
+
+def four_over_six(block):
+    """Adaptive block scaling: keep the lower-MSE of M=6 and M=4
+    (strict '<' keeps the standard scale-6 on ties). Returns (D, q, M)."""
+    d6, q6, e6 = quantize_block(block, 6)
+    d4, q4, e4 = quantize_block(block, 4)
+    return (d4, q4, 4) if e4 < e6 else (d6, q6, 6)
+
+
+@cocotb.test()
+async def test_nvfp4_four_over_six_dense(dut):
+    """4/6 adaptive block scaling (arXiv:2512.02010) on existing
+    silicon: quantize FP32 weight blocks host-side with the better of
+    scale-6/scale-4, run the E2M1 codes through the dense path (4 RUNs
+    of K=4 per 16-block), and assert the chip's integer partial sums
+    are bit-exact AND host dequant (D/2 * sum) exactly reproduces the
+    float dot against the dequantized weights."""
+    start_clock(dut)
+    await hw_reset(dut)
+
+    # Paper's worked example: [10,20,30,40] scales exactly with M=4
+    # (D=10, scaled {1,2,3,4} all in E2M1) but not with M=6.
+    _, _, e6 = quantize_block([10.0, 20.0, 30.0, 40.0] * 4, 6)
+    D, q, M = four_over_six([10.0, 20.0, 30.0, 40.0] * 4)
+    assert (M, D) == (4, 10.0) and e6 > 0
+    assert all(D * qi == v for qi, v in zip(q, [10.0, 20.0, 30.0, 40.0] * 4))
+
+    # Near-max pathology: a value landing at scaled ~5 (the 4..6 gap)
+    # is what 4/6 fixes — scale-4 must win on this block too.
+    _, _, M5 = four_over_six([6.0, 5.0, 1.0, 2.0] + [0.0] * 12)
+    assert M5 == 4
+
+    rng = random.Random(0x4064)
+    trials = 1 if GL_TEST else 3
+    for t in range(trials):
+        # One FP32 weight block per column; INT8 activation rows.
+        blocks = [[rng.uniform(-8, 8) for _ in range(BLOCK)] for _ in range(N)]
+        acts = [[rng.randint(-128, 127) for _ in range(BLOCK)] for _ in range(N)]
+        quant = [four_over_six(b) for b in blocks]
+
+        # 16-dot = 4 dense RUNs of K=4, accumulated host-side (the
+        # same cross-tile accumulation any real deployment does).
+        C = [[0] * N for _ in range(N)]
+        for seg in range(4):
+            A = [[0] * K for _ in range(N)]
+            for i in range(N):
+                for j in range(4):          # even slots feed dense mode
+                    A[i][2 * j] = acts[i][4 * seg + j]
+            wcodes = [[e2m1_encode(quant[c][1][4 * seg + j]) for j in range(4)]
+                      for c in range(N)]
+            part = await run_matmul(dut, A, wcodes, dense=1)
+            check(dut, part, golden_dense_e2m1(A, wcodes), f"t{t} seg{seg}")
+            for i in range(N):
+                for c in range(N):
+                    C[i][c] += part[i][c]
+
+        # Chip sums are in the x2 domain: dequant is (D/2) * C. All
+        # quantities are exact binary floats -> assert exact equality.
+        for i in range(N):
+            for c in range(N):
+                D, q, _ = quant[c]
+                ref = sum(acts[i][k] * (D * q[k]) for k in range(BLOCK))
+                assert (D / 2) * C[i][c] == ref, (
+                    f"t{t}: dequant C[{i}][{c}] = {(D / 2) * C[i][c]}, "
+                    f"float reference = {ref}")
+    dut._log.info("NVFP4 4/6 dense PASSED")
+
+
+@cocotb.test()
+async def test_nvfp4_four_over_six_sparse(dut):
+    """Same 4/6 exactness through the 1:2-sparse path: FP32 blocks
+    pruned 1:2 along k, quantized with adaptive scaling, packed as
+    {select, e2m1} codes, one 16-block = 2 sparse RUNs of K=8."""
+    start_clock(dut)
+    await hw_reset(dut)
+
+    rng = random.Random(0x0406)
+    trials = 1 if GL_TEST else 3
+    for t in range(trials):
+        # 1:2-sparse FP32 blocks: one value per pair, random position.
+        blocks, sels = [], []
+        for _ in range(N):
+            b = [0.0] * BLOCK
+            s = [rng.randint(0, 1) for _ in range(BLOCK // 2)]
+            for j, sel in enumerate(s):
+                b[2 * j + sel] = rng.uniform(-8, 8)
+            blocks.append(b)
+            sels.append(s)
+        acts = [[rng.randint(-128, 127) for _ in range(BLOCK)] for _ in range(N)]
+        quant = [four_over_six(b) for b in blocks]
+
+        C = [[0] * N for _ in range(N)]
+        for half in range(2):               # 2 RUNs of K=8 per block
+            A = [row[8 * half:8 * half + 8] for row in acts]
+            wcodes = []
+            for c in range(N):
+                D, q, _ = quant[c]
+                codes = []
+                for j in range(4):
+                    sel = sels[c][4 * half + j]
+                    val = q[8 * half + 2 * j + sel]
+                    codes.append((sel << 4) | e2m1_encode(val))
+                wcodes.append(codes)
+            part = await run_matmul(dut, A, wcodes)
+            check(dut, part, golden_matmul(A, wcodes), f"t{t} half{half}")
+            for i in range(N):
+                for c in range(N):
+                    C[i][c] += part[i][c]
+
+        for i in range(N):
+            for c in range(N):
+                D, q, _ = quant[c]
+                ref = sum(acts[i][k] * (D * q[k]) for k in range(BLOCK))
+                assert (D / 2) * C[i][c] == ref, (
+                    f"t{t}: sparse dequant C[{i}][{c}] = {(D / 2) * C[i][c]}, "
+                    f"float reference = {ref}")
+    dut._log.info("NVFP4 4/6 sparse PASSED")
