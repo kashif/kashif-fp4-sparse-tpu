@@ -18,6 +18,7 @@ project:
     - "control.v"
     - "memory_a.v"
     - "memory_b.v"
+    - "skew3.v"
     - "array.v"
     - "pe.v"
 
