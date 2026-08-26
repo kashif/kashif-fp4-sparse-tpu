@@ -1,77 +1,83 @@
 <mxfile host="app.diagrams.net" type="device">
   <diagram id="dataflow" name="Dataflow">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="850" math="0" shadow="0">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="820" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="title" value="FP4 Sparse Systolic Dataflow — INT8 activation pairs flow right, E2M1 codes flow down, C = A(3x8) x W(8x3)" style="text;html=1;fontSize=16;fontStyle=1;align=center;" vertex="1" parent="1">
+        <mxCell id="title" value="FP4 Sparse Sequencer Dataflow — one PE computes all 9 outputs sequentially, ~45 cycles/RUN" style="text;html=1;fontSize=16;fontStyle=1;align=center;" vertex="1" parent="1">
           <mxGeometry x="100" y="20" width="1000" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="pe00" value="PE[0][0]&#10;C00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="400" y="200" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe01" value="PE[0][1]&#10;C01" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="560" y="200" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe02" value="PE[0][2]&#10;C02" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="720" y="200" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe10" value="PE[1][0]&#10;C10" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="400" y="330" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe11" value="PE[1][1]&#10;C11" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="560" y="330" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe12" value="PE[1][2]&#10;C12" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="720" y="330" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe20" value="PE[2][0]&#10;C20" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="400" y="460" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe21" value="PE[2][1]&#10;C21" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="560" y="460" width="100" height="80" as="geometry" /></mxCell>
-        <mxCell id="pe22" value="PE[2][2]&#10;C22" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="720" y="460" width="100" height="80" as="geometry" /></mxCell>
-
-        <mxCell id="rowa0" value="A row 0&#10;INT8 pairs (A00,A01) (A02,A03) (A04,A05) (A06,A07)&#10;enters at t = 1,2,3,4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="120" y="200" width="220" height="80" as="geometry" /></mxCell>
-        <mxCell id="rowa1" value="A row 1&#10;pairs enter at t = 2,3,4,5&#10;(skewed +1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="120" y="330" width="220" height="80" as="geometry" /></mxCell>
-        <mxCell id="rowa2" value="A row 2&#10;pairs enter at t = 3,4,5,6&#10;(skewed +2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="120" y="460" width="220" height="80" as="geometry" /></mxCell>
-
-        <mxCell id="colb0" value="W col 0: codes slot 0,1,2,3 at t = 1,2,3,4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="390" y="90" width="120" height="70" as="geometry" /></mxCell>
-        <mxCell id="colb1" value="W col 1: skewed +1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="550" y="90" width="120" height="70" as="geometry" /></mxCell>
-        <mxCell id="colb2" value="W col 2: skewed +2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="710" y="90" width="120" height="70" as="geometry" /></mxCell>
-
-        <mxCell id="a00" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="rowa0" target="pe00"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a01" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe00" target="pe01"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a02" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe01" target="pe02"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a10" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="rowa1" target="pe10"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe10" target="pe11"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a12" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe11" target="pe12"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a20" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="rowa2" target="pe20"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a21" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe20" target="pe21"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a22" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="pe21" target="pe22"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <mxCell id="b00" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="colb0" target="pe00"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b01" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe00" target="pe10"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b02" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe10" target="pe20"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b10" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="colb1" target="pe01"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe01" target="pe11"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b12" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe11" target="pe21"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b20" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="colb2" target="pe02"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b21" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe02" target="pe12"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="b22" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="pe12" target="pe22"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <mxCell id="pedetail" value="Inside each PE (multiplier-free MAC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="880" y="180" width="280" height="400" as="geometry" />
+        <mxCell id="s_issue" value="RUN issued&#10;cur_row=0, cur_col=0, step=0&#10;pe_clr=1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="60" y="120" width="160" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="pd1" value="a_in[15:0] = INT8 pair {a_odd, a_even}&#10;(two contraction steps)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
-          <mxGeometry x="900" y="220" width="240" height="50" as="geometry" />
+
+        <mxCell id="s_acc" value="ACCUMULATE&#10;step = 0,1,2,3&#10;pe_we=1: c_reg += prod(A[row][step], W[col][step])" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="120" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="pd2" value="b_in[4:0] = {select, sign, mag[2:0]}&#10;(E2M1 nibble + sparsity select)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
-          <mxGeometry x="900" y="280" width="240" height="50" as="geometry" />
+
+        <mxCell id="s_commit" value="COMMIT&#10;result_mem[cur_row][cur_col] &lt;= c_reg&#10;pe_clr=1 (prep next output)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_advance" value="last output (2,2)?&#10;no -&gt; advance (cur_row,cur_col)&#10;row-major, step=0, loop to ACCUMULATE&#10;yes -&gt; ready_to_send=1, done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="940" y="105" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop" value="loop: next output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="s_advance" target="s_acc">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1050" y="60" as="sourcePoint" />
+            <mxPoint x="420" y="60" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1050" y="60" />
+              <mxPoint x="420" y="60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="i1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s_issue" target="s_acc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="i2" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s_acc" target="s_commit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="i3" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s_commit" target="s_advance"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="order" value="Output visit order (row-major, 5 cycles each: 4 accumulate + 1 commit)" style="text;html=1;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="250" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="o00" value="(0,0)&#10;t=1-5" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o01" value="(0,1)&#10;t=6-10" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="180" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o02" value="(0,2)&#10;t=11-15" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="300" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o10" value="(1,0)&#10;t=16-20" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="420" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o11" value="(1,1)&#10;t=21-25" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="540" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o12" value="(1,2)&#10;t=26-30" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="660" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o20" value="(2,0)&#10;t=31-35" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="780" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o21" value="(2,1)&#10;t=36-40" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="900" y="280" width="110" height="40" as="geometry" /></mxCell>
+        <mxCell id="o22" value="(2,2)&#10;t=41-45, done" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1020" y="280" width="120" height="40" as="geometry" /></mxCell>
+
+        <mxCell id="pedetail" value="Inside the PE (multiplier-free MAC — unchanged from the 9-PE array)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="240" y="400" width="600" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="pd1" value="a_in[15:0] = INT8 pair {a_odd, a_even}&#10;from memory_a, addr=(cur_row, step)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="270" y="450" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pd2" value="b_in[4:0] = {select, sign, mag[2:0]}&#10;from memory_b, addr=(cur_col, step)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="270" y="520" width="260" height="50" as="geometry" />
         </mxCell>
         <mxCell id="pd3" value="8-bit 2:1 mux&#10;sparse: select picks a_even (k=2j) or a_odd (k=2j+1)&#10;dense: always a_even" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="900" y="340" width="240" height="60" as="geometry" />
+          <mxGeometry x="570" y="450" width="240" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="pd4" value="shift-add product (NO multiplier)&#10;E2M1 mag = (1|3) &lt;&lt; s&#10;prod = (act [+ act&lt;&lt;1]) &lt;&lt; s, ± sign&#10;(one adder, one shifter, one negate)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
-          <mxGeometry x="900" y="410" width="240" height="70" as="geometry" />
+        <mxCell id="pd4" value="shift-add product (NO multiplier)&#10;E2M1 mag = (1|3) &lt;&lt; s&#10;prod = (act [+ act&lt;&lt;1]) &lt;&lt; s, ± sign" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="570" y="530" width="240" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="pd5" value="14-bit accumulator (exact: max |C| = 6144)&#10;cleared on RUN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-          <mxGeometry x="900" y="490" width="240" height="50" as="geometry" />
+        <mxCell id="pd5" value="14-bit accumulator (exact: max |C| = 6144)&#10;cleared by pe_clr, one per output" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="420" y="640" width="260" height="60" as="geometry" />
         </mxCell>
         <mxCell id="pde1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="pd1" target="pd3"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="pde2" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="pd2" target="pd3"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="pde3" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="pd3" target="pd4"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="pde4" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="pd4" target="pd5"><mxGeometry relative="1" as="geometry" /></mxCell>
 
-        <mxCell id="note" value="Skewed wavefront (reference mini-TPU pattern + one element step): line i streams during t ∈ [i+1, i+4]; PE[i][c] combines A-pair j with W-code j at t = i+c+1+j. One sparse pair step = one dense step ⇒ K=8 in the time dense does K=4 (2x throughput); 2 sparse RUNs = one NVFP4 16-element block. Dense E2M1 mode (RUN d flag) uses the same schedule with K=4. RUN completes at t = 8." style="text;html=1;whiteSpace=wrap;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="120" y="600" width="700" height="80" as="geometry" />
+        <mxCell id="note" value="No skewed wavefront: with one PE handling one (row,col) output at a time, there is nothing to stagger, so memory_a/memory_b need only ONE read port each (addressed directly by (row-or-col, step)) instead of three concurrent per-row/column ports — that removed the multi-port read muxing the old 9-PE array needed. Contraction depth is unchanged: 4 steps/output either mode (sparse code covers 2 k-positions via select, K=8; dense K=4), same accumulator bound (max |acc| = 4 x 1536 = 6144), same E2M1 element set, same 1:2 sparsity, same exact accumulation." style="text;html=1;whiteSpace=wrap;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="60" y="750" width="1080" height="60" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

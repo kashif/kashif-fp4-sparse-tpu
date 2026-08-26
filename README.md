@@ -2,10 +2,12 @@
 
 # FP4 Sparse Mini-TPU
 
-A 3x3 output-stationary systolic array computing `C = A x W` with **1:2
-structurally sparse E2M1 (NVFP4/MXFP4 element) weights**, **INT8
-activations**, and **no hardware multiplier anywhere**. Targets a Tiny
-Tapeout 2x2 tile.
+Computes `C = A x W` with **1:2 structurally sparse E2M1 (NVFP4/MXFP4
+element) weights**, **INT8 activations**, and **no hardware multiplier
+anywhere** — using a single time-multiplexed PE instead of a 9-PE array,
+since a Tiny Tapeout SPI design is completely SPI-bound: compute is
+practically free, so 9x spatial parallelism buys nothing but area. Targets
+a Tiny Tapeout 1x2 tile.
 
 - [Read the documentation for project](docs/info.md)
 
@@ -74,25 +76,33 @@ and per-token activation scales all work on bit-exact partial sums.
 Activation functions are host-side too — they are only correct after
 cross-tile accumulation and bias.
 
-### A real systolic matmul
+### One PE, time-multiplexed across all 9 outputs
 
-The architecture is the silicon-proven
-[Mini-TPU v2](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi):
-operand memories, skewed 8-cycle wavefront, activations flowing right,
-weights flowing down, results accumulating in place. Both operand streams
-change every cycle — the array computes true dot products
-(`C[i][c] = sum_k A[i][k] * W[k][c]`, K = 8), verified against an
-independent golden model.
+Originally a 3x3 output-stationary systolic array following the
+silicon-proven [Mini-TPU v2](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi)
+(operand memories, skewed 8-cycle wavefront, activations right / weights
+down). Measuring real synthesis showed the 9 PEs' registers and replicated
+shift-add datapath were the single largest cost in the design — 58% of
+all flip-flops and most of the combinational logic — for a parallelism
+the SPI-bound interface never needed: a RUN's ~1500-cycle SPI load time
+dwarfs any plausible compute latency. So the array became a single PE,
+sequenced by a `(cur_row, cur_col, step)` controller through all 9
+outputs, row-major, 4 accumulate cycles + 1 commit cycle each:
 
 ```
-            W col 0    W col 1    W col 2     ({select, e2m1} codes, skewed)
-               |          |          |
-A row 0 --> [PE 00] -> [PE 01] -> [PE 02]     A rows: INT8 pairs
-               |          |          |
-A row 1 --> [PE 10] -> [PE 11] -> [PE 12]
-               |          |          |
-A row 2 --> [PE 20] -> [PE 21] -> [PE 22]
+RUN issued -> for (row,col) in 9 outputs, row-major:
+                for step in 0..3: acc += e2m1(W[col][step]) * A[row][step]  (4 cycles)
+                result_mem[row][col] <= acc; acc <= 0                       (1 commit cycle)
+              ready_to_send
 ```
+
+~45 cycles total — still under 5% of the SPI load time, so the
+serialization is free. The PE datapath (`pe.v`) is byte-for-byte
+unchanged; only the execution strategy (spatial -> temporal) and the
+memory read ports (3 concurrent -> 1 each, since there's no more skewed
+wavefront to feed) changed. See `Architecture.drawio` / `Dataflow.drawio`.
+Verified bit-exact against the same independent golden model the parallel
+array used (`C[i][c] = sum_k A[i][k] * W[k][c]`, K = 8).
 
 ### SPI instruction set (16 bits, LSB-first; SCLK <= clk/6)
 
@@ -100,7 +110,7 @@ A row 2 --> [PE 20] -> [PE 21] -> [PE 22]
 |-------------|------------------------|-------------|
 | `LOAD A`    | `10 0 rr eee aaaaaaaa` | INT8 activation byte into row `r`, element `e` (0-7) |
 | `LOAD B`    | `10 1 cc 0jj 000swwww` | Weight code {select, E2M1} into column `c`, pair slot `j` (0-3) |
-| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run 8 cycles; `d`=0 sparse K=8, `d`=1 dense K=4 |
+| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run ~45 cycles (9 outputs x (4 acc + 1 commit)); `d`=0 sparse K=8, `d`=1 dense K=4 |
 | `STORE`     | `11 b rr cc 000000000` | Byte `b` (0=low, 1=high) of C[r][c] on `uo_out` |
 
 Pins: `ui[0]`=MOSI, `ui[1]`=CS, `ui[2]`=SCLK; `uo_out`=result byte;
@@ -112,20 +122,20 @@ Pins: `ui[0]`=MOSI, `ui[1]`=CS, `ui[2]`=SCLK; `uo_out`=result byte;
 ```
 src/
   project.v     # Top-level TT module (tt_um_kashif_fp4_sparse_tpu)
-  tpu.v         # Core: control + memories + array + result mux
+  tpu.v         # Core: control + memories + PE + result memory + result mux
   spi.v         # SPI instruction receiver, 16-bit, receive-only
-  control.v     # LOAD/RUN/STORE decode, skewed wavefront counter
-  memory_a.v    # Activations: 3 rows x 8 INT8, read as pairs
-  memory_b.v    # Weights: 3 cols x 4 sparse codes {select, e2m1}
-  array.v       # 3x3 systolic array, 14-bit exact accumulators
-  pe.v          # shift-add MAC: E2M1 decode, no multiplier
+  control.v     # LOAD/RUN/STORE decode, (row,col,step) sequencer
+  memory_a.v    # Activations: 3 rows x 8 INT8, single-port read
+  memory_b.v    # Weights: 3 cols x 4 sparse codes {select, e2m1}, single-port read
+  result_mem.v  # 9 x 14-bit result store, addressed by (row,col)
+  pe.v          # shift-add MAC: E2M1 decode, no multiplier (one instance, reused)
 test/
   tb.v          # Verilog testbench (GL_TEST compatible)
   test.py       # 9 cocotb tests with independent golden model
   Makefile      # icarus/cocotb build
 docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
-info.yaml       # TT metadata: 2x2 tile, 5 MHz, SKY130A
+info.yaml       # TT metadata: 1x2 tile, 5 MHz, SKY130A
 ```
 
 ## Verification
@@ -152,7 +162,8 @@ needed after power-up.
 ## Target
 
 - **Shuttle**: TTSKY26c (SkyWater SKY130A)
-- **Tile**: 2x2 (4 tiles of ~167x108 um)
+- **Tile**: 1x2 (2 tiles of ~167x108 um) — measured 70.1% GPL / 60.6%
+  effective utilization, under the fleet's 65% safe-placement rule
 - **Clock**: 5 MHz (SPI SCLK <= 833 kHz)
 
 ## References

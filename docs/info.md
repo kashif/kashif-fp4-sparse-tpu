@@ -5,13 +5,22 @@ sections.
 
 ## How it works
 
-A mini TPU built around a **3x3 output-stationary systolic array** that
-computes `C = A x W` with **INT8 activations** and **1:2 structurally sparse
-E2M1 weights** — the 4-bit floating-point element type shared by NVFP4
-(NVIDIA Blackwell) and MXFP4. It combines the two numerics levers from
-Roune's AI-chip design argument in one datapath: structured sparsity along
-the contraction axis *and* a 4-bit float element — with higher-precision
-INT8 activations, the side that is hardest to quantize.
+A mini TPU that computes `C = A x W` with **INT8 activations** and **1:2
+structurally sparse E2M1 weights** — the 4-bit floating-point element type
+shared by NVFP4 (NVIDIA Blackwell) and MXFP4. It combines the two numerics
+levers from Roune's AI-chip design argument in one datapath: structured
+sparsity along the contraction axis *and* a 4-bit float element — with
+higher-precision INT8 activations, the side that is hardest to quantize.
+
+The math runs on **one time-multiplexed processing element**, not a
+spatial array: a SPI-driven design is completely SPI-bound (a RUN's
+operands take ~1500 SPI clocks to load), so a RUN's compute latency is
+practically free no matter how many outputs share one PE. The original
+3x3 systolic array spent 58% of its flip-flops and most of its
+combinational logic on 9-way spatial parallelism that bought nothing;
+serializing to one PE — reused across all 9 outputs, ~45 cycles per RUN,
+still under 5% of the SPI load time — cut chip area ~47% and dropped the
+design from a 2x2 to a **1x2 tile**.
 
 There is **no hardware multiplier anywhere**: every E2M1 magnitude
 (0, 1, 2, 3, 4, 6, 8, 12 in the x2 integer domain) is `(1 or 3) << shift`,
@@ -52,12 +61,13 @@ trade NVIDIA makes running dense on 2:4-sparse tensor cores. This is plain
 dense FP4-weight x INT8-activation matmul for off-the-shelf
 NVFP4/MXFP4-quantized models that were not sparsified.
 
-Architecture, SPI protocol, and skewed-wavefront control follow the proven
-reference mini-TPU
-([MILOUDIAS/IEEE_ttsky_mini_tpu_spi](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi)):
-activations flow right, weights flow down, both streams change every cycle
-(real dot products), and a full matmul runs in an 8-cycle wavefront.
-Activation functions are host-side: they are only correct after cross-tile
+SPI protocol follows the proven reference mini-TPU
+([MILOUDIAS/IEEE_ttsky_mini_tpu_spi](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi)),
+which this chip's original 3x3 array also ported its systolic control
+from; a `(row, col, step)` sequencer replaced the skewed wavefront when
+the array serialized to one PE (see REPORT.md). Both operand streams
+still change every RUN step (real dot products, not a shortcut). Activation
+functions are host-side: they are only correct after cross-tile
 partial-sum accumulation and bias, which happen on the host anyway.
 
 ### Instruction set (16 bits, sent LSB-first over SPI)
@@ -66,13 +76,16 @@ partial-sum accumulation and bias, which happen on the host anyway.
 |-------------|------------------------|-------------|
 | `LOAD A`    | `10 0 rr eee aaaaaaaa` | INT8 activation byte `a` into row `r` (0-2), element `e` (0-7) |
 | `LOAD B`    | `10 1 cc 0jj 000swwww` | Weight code {select `s`, E2M1 `w`} into column `c` (0-2), pair slot `j` (0-3) |
-| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run the wavefront (8 cycles); `d`=0 sparse (K=8), `d`=1 dense E2M1 (K=4) |
+| `RUN`       | `01 d 0000000000000`   | Clear accumulators, run all 9 outputs on one PE (~45 cycles); `d`=0 sparse (K=8), `d`=1 dense E2M1 (K=4) |
 | `STORE`     | `11 b rr cc 000000000` | Drive byte `b` (0 = acc[7:0], 1 = acc[13:8]) of C[r][c] on `uo_out` |
 
 SCLK must be at most clk/6 (the SPI bit counter crosses clock domains
 unsynchronised, as in the reference). The `ready` pin (uio[1]) pulses when a
-RUN completes; alternatively just wait 8+ clock cycles. The SPI is
-receive-only: all results are read via STORE on `uo_out`.
+RUN completes; alternatively just wait ~45+ clock cycles. The SPI is
+receive-only: all results are read via STORE on `uo_out`, from a small
+result memory that holds all 9 outputs until the next RUN overwrites them
+(the same "any output, any time" contract the old per-PE accumulators
+offered).
 
 ### E2M1 weight encoding (element type of NVFP4 and MXFP4)
 
