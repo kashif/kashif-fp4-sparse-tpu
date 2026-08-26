@@ -27,6 +27,11 @@
  * step has the same schedule as one dense step, which is exactly the
  * 2x throughput claim. Two sparse RUNs cover exactly one NVFP4
  * 16-element block (K=8 dense-equivalent per RUN).
+ *
+ * The per-row pair select is produced directly as a one-hot 4-bit
+ * code from the counter comparisons (rather than encoded to a 2-bit
+ * binary index) so the memories can select with an OR-of-AND mux
+ * instead of decoding an address first.
  */
 
 `default_nettype none
@@ -48,14 +53,14 @@ module control (
     output wire [1:0]  mema_write_line,
     output wire [2:0]  mema_write_elem,
     output wire [2:0]  mema_read_enable,
-    output wire [5:0]  mema_read_elem,
+    output wire [11:0] mema_read_sel,
 
     output wire [4:0]  memb_data_in,
     output wire        memb_write_enable,
     output wire [1:0]  memb_write_line,
     output wire [1:0]  memb_write_elem,
     output wire [2:0]  memb_read_enable,
-    output wire [5:0]  memb_read_elem,
+    output wire [11:0] memb_read_sel,
 
     output reg         ready_to_send
 );
@@ -103,25 +108,23 @@ module control (
     // Shared skewed read pattern (identical for A rows and B columns):
     // line i streams its 4 elements during counter in [i+1, i+4].
     // ------------------------------------------------------------------
-    wire [2:0] read_enable_shared;
-    wire [5:0] read_elem_shared;
+    wire [2:0]  read_enable_shared;
+    wire [11:0] read_sel_shared;   // one-hot: 4 bits per row, which pair
 
     genvar i;
     generate
         for (i = 0; i < 3; i = i + 1) begin : read_pattern_gen
             assign read_enable_shared[i] = (counter > i) && (counter < (i + 5));
-            assign read_elem_shared[2*i +: 2] =
-                (counter == (i + 1)) ? 2'd0 :
-                (counter == (i + 2)) ? 2'd1 :
-                (counter == (i + 3)) ? 2'd2 :
-                (counter == (i + 4)) ? 2'd3 : 2'd0;
+            assign read_sel_shared[4*i +: 4] =
+                {(counter == (i + 4)), (counter == (i + 3)),
+                 (counter == (i + 2)), (counter == (i + 1))};
         end
     endgenerate
 
     assign mema_read_enable = read_enable_shared;
     assign memb_read_enable = read_enable_shared;
-    assign mema_read_elem   = read_elem_shared;
-    assign memb_read_elem   = read_elem_shared;
+    assign mema_read_sel    = read_sel_shared;
+    assign memb_read_sel    = read_sel_shared;
 
     // ------------------------------------------------------------------
     // Write path
