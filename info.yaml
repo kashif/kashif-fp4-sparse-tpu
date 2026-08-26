@@ -8,7 +8,7 @@ project:
   clock_hz:     5000000
   wokwi_id:     "469597729208786945"  # registered TT slot; repo URL repointed here from tt-e2m1-x-ternary
 
-  tiles: "2x2"
+  tiles: "1x2"
   top_module:  "tt_um_kashif_fp4_sparse_tpu"
 
   source_files:
