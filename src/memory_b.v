@@ -4,11 +4,14 @@
  * Each code {select, e2m1[3:0]} covers TWO dense weight positions
  * (contraction steps k=2j and k=2j+1 of column c): the E2M1 nibble
  * sits at k = 2j + select, the other position is zero. 12 codes
- * encode a dense 8x3 weight matrix in 60 bits — 2.5 bits per dense
+ * encode a dense 8x3 weight matrix in 60 bits -- 2.5 bits per dense
  * position, the storage saving of 1:2 sparsity on a 4-bit element.
  *
- * Read out per column, one code per wavefront step. Columns read as 0
- * when not enabled (code 0 decodes to +0 -> product 0).
+ * Read out UNSKEWED: all 3 columns are read simultaneously, one
+ * shared 2-bit slot index -- the per-column launch stagger is
+ * reconstructed downstream by skew3.v, not by addressing here.
+ * Output is 0 outside the shared 4-cycle read window (code 0 also
+ * decodes to +0 -> product 0, belt and braces).
  */
 
 `default_nettype none
@@ -19,9 +22,9 @@ module memory_b (
     input  wire [1:0]  write_line,      // column 0..2
     input  wire [1:0]  write_elem,      // pair slot 0..3
     input  wire [4:0]  data_in,
-    input  wire [2:0]  read_enable,     // per-column
-    input  wire [5:0]  read_slot,       // 2-bit slot index per column (0..3)
-    output wire [14:0] data_out         // 3 cols x 5-bit code
+    input  wire        read_enable,     // shared across all 3 columns
+    input  wire [1:0]  read_slot,       // shared 2-bit slot index (0..3)
+    output wire [14:0] data_out         // 3 cols x 5-bit code, unskewed
 );
 
     reg [4:0] mem [0:2][0:3];
@@ -34,9 +37,8 @@ module memory_b (
     genvar i;
     generate
         for (i = 0; i < 3; i = i + 1) begin : read_col
-            wire [1:0] slot = read_slot[2*i +: 2];
-            assign data_out[5*i +: 5] = read_enable[i]
-                ? mem[i][slot]
+            assign data_out[5*i +: 5] = read_enable
+                ? mem[i][read_slot]
                 : 5'd0;
         end
     endgenerate

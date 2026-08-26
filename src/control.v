@@ -21,12 +21,16 @@
  *          [12:11] row, [10:9] col
  *          Latches the selection; result output holds until next STORE.
  *
- * Memories A and B share the same skewed read pattern (line i active
- * during counter in [i+1, i+4], element walking 0,1,2,3) — the
- * reference schedule with one extra element step; one sparse pair
- * step has the same schedule as one dense step, which is exactly the
- * 2x throughput claim. Two sparse RUNs cover exactly one NVFP4
- * 16-element block (K=8 dense-equivalent per RUN).
+ * Memories A and B are read UNSKEWED: one shared 4-cycle window
+ * (counter 1..4) and one shared 2-bit pair/slot index walking
+ * 0,1,2,3, identical for every row/column. The per-line systolic
+ * launch stagger (line i active during counter [i+1, i+4], the
+ * reference schedule with one extra element step) is reconstructed
+ * downstream by skew3.v -- a plain delay chain, not an addressed
+ * read here. One sparse pair step has the same schedule as one dense
+ * step, which is exactly the 2x throughput claim. Two sparse RUNs
+ * cover exactly one NVFP4 16-element block (K=8 dense-equivalent per
+ * RUN).
  */
 
 `default_nettype none
@@ -47,15 +51,15 @@ module control (
     output wire        mema_write_enable,
     output wire [1:0]  mema_write_line,
     output wire [2:0]  mema_write_elem,
-    output wire [2:0]  mema_read_enable,
-    output wire [5:0]  mema_read_elem,
+    output wire        mema_read_enable,
+    output wire [1:0]  mema_read_pair,
 
     output wire [4:0]  memb_data_in,
     output wire        memb_write_enable,
     output wire [1:0]  memb_write_line,
     output wire [1:0]  memb_write_elem,
-    output wire [2:0]  memb_read_enable,
-    output wire [5:0]  memb_read_elem,
+    output wire        memb_read_enable,
+    output wire [1:0]  memb_read_pair,
 
     output reg         ready_to_send
 );
@@ -100,28 +104,17 @@ module control (
     end
 
     // ------------------------------------------------------------------
-    // Shared skewed read pattern (identical for A rows and B columns):
-    // line i streams its 4 elements during counter in [i+1, i+4].
+    // Shared unskewed read pattern: one window, one pair index, for
+    // both memories and every line.
     // ------------------------------------------------------------------
-    wire [2:0] read_enable_shared;
-    wire [5:0] read_elem_shared;
+    wire       read_window = (counter > 4'd0) && (counter < 4'd5);
+    wire [3:0] pair_full   = counter - 4'd1;
+    wire [1:0] read_pair   = pair_full[1:0];
 
-    genvar i;
-    generate
-        for (i = 0; i < 3; i = i + 1) begin : read_pattern_gen
-            assign read_enable_shared[i] = (counter > i) && (counter < (i + 5));
-            assign read_elem_shared[2*i +: 2] =
-                (counter == (i + 1)) ? 2'd0 :
-                (counter == (i + 2)) ? 2'd1 :
-                (counter == (i + 3)) ? 2'd2 :
-                (counter == (i + 4)) ? 2'd3 : 2'd0;
-        end
-    endgenerate
-
-    assign mema_read_enable = read_enable_shared;
-    assign memb_read_enable = read_enable_shared;
-    assign mema_read_elem   = read_elem_shared;
-    assign memb_read_elem   = read_elem_shared;
+    assign mema_read_enable = read_window;
+    assign memb_read_enable = read_window;
+    assign mema_read_pair   = read_pair;
+    assign memb_read_pair   = read_pair;
 
     // ------------------------------------------------------------------
     // Write path

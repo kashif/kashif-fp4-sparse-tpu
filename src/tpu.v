@@ -30,18 +30,20 @@ module tpu (
     wire        mema_write_enable;
     wire [1:0]  mema_write_line;
     wire [2:0]  mema_write_elem;
-    wire [2:0]  mema_read_enable;
-    wire [5:0]  mema_read_elem;
+    wire        mema_read_enable;
+    wire [1:0]  mema_read_pair;
 
     wire [4:0]  memb_data_in;
     wire        memb_write_enable;
     wire [1:0]  memb_write_line;
     wire [1:0]  memb_write_elem;
-    wire [2:0]  memb_read_enable;
-    wire [5:0]  memb_read_elem;
+    wire        memb_read_enable;
+    wire [1:0]  memb_read_pair;
 
-    wire [47:0]  array_a_in;
-    wire [14:0]  array_b_in;
+    wire [47:0]  mema_data_out;     // unskewed: row i valid at t, not t+i
+    wire [14:0]  memb_data_out;     // unskewed: col i valid at t, not t+i
+    wire [47:0]  array_a_in;        // skewed: row i delayed i cycles
+    wire [14:0]  array_b_in;        // skewed: col i delayed i cycles
     wire [125:0] array_data_out;
 
     control control_unit (
@@ -59,13 +61,13 @@ module tpu (
         .mema_write_line    (mema_write_line),
         .mema_write_elem    (mema_write_elem),
         .mema_read_enable   (mema_read_enable),
-        .mema_read_elem     (mema_read_elem),
+        .mema_read_pair     (mema_read_pair),
         .memb_data_in       (memb_data_in),
         .memb_write_enable  (memb_write_enable),
         .memb_write_line    (memb_write_line),
         .memb_write_elem    (memb_write_elem),
         .memb_read_enable   (memb_read_enable),
-        .memb_read_elem     (memb_read_elem),
+        .memb_read_pair     (memb_read_pair),
         .ready_to_send      (ready_to_send)
     );
 
@@ -76,8 +78,8 @@ module tpu (
         .write_elem   (mema_write_elem),
         .data_in      (mema_data_in),
         .read_enable  (mema_read_enable),
-        .read_pair    (mema_read_elem),
-        .data_out     (array_a_in)
+        .read_pair    (mema_read_pair),
+        .data_out     (mema_data_out)
     );
 
     memory_b memory_wgt (
@@ -87,8 +89,23 @@ module tpu (
         .write_elem   (memb_write_elem),
         .data_in      (memb_data_in),
         .read_enable  (memb_read_enable),
-        .read_slot    (memb_read_elem),
-        .data_out     (array_b_in)
+        .read_slot    (memb_read_pair),
+        .data_out     (memb_data_out)
+    );
+
+    // Unskewed memory reads -> skewed array inputs: row/col i delayed
+    // i cycles, reconstructing the systolic launch stagger (see
+    // skew3.v and control.v's header comment).
+    skew3 #(.LANE_WIDTH(16)) skew_a (
+        .clk (clk),
+        .in  (mema_data_out),
+        .out (array_a_in)
+    );
+
+    skew3 #(.LANE_WIDTH(5)) skew_b (
+        .clk (clk),
+        .in  (memb_data_out),
+        .out (array_b_in)
     );
 
     array array_inst (
