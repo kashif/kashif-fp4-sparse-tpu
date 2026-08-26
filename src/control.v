@@ -48,14 +48,12 @@ module control (
     output wire [1:0]  mema_write_line,
     output wire [2:0]  mema_write_elem,
     output wire [2:0]  mema_read_enable,
-    output wire [5:0]  mema_read_elem,
 
     output wire [4:0]  memb_data_in,
     output wire        memb_write_enable,
     output wire [1:0]  memb_write_line,
     output wire [1:0]  memb_write_elem,
     output wire [2:0]  memb_read_enable,
-    output wire [5:0]  memb_read_elem,
 
     output reg         ready_to_send
 );
@@ -101,27 +99,22 @@ module control (
 
     // ------------------------------------------------------------------
     // Shared skewed read pattern (identical for A rows and B columns):
-    // line i streams its 4 elements during counter in [i+1, i+4].
+    // line i is active during counter in [i+1, i+4]. That's the only
+    // addressing either memory needs -- each is a self-rotating
+    // 4-slot register that walks 0,1,2,3 on its own while enabled
+    // (see memory_a.v), so there is no read-index to encode here.
     // ------------------------------------------------------------------
     wire [2:0] read_enable_shared;
-    wire [5:0] read_elem_shared;
 
     genvar i;
     generate
         for (i = 0; i < 3; i = i + 1) begin : read_pattern_gen
             assign read_enable_shared[i] = (counter > i) && (counter < (i + 5));
-            assign read_elem_shared[2*i +: 2] =
-                (counter == (i + 1)) ? 2'd0 :
-                (counter == (i + 2)) ? 2'd1 :
-                (counter == (i + 3)) ? 2'd2 :
-                (counter == (i + 4)) ? 2'd3 : 2'd0;
         end
     endgenerate
 
     assign mema_read_enable = read_enable_shared;
     assign memb_read_enable = read_enable_shared;
-    assign mema_read_elem   = read_elem_shared;
-    assign memb_read_elem   = read_elem_shared;
 
     // ------------------------------------------------------------------
     // Write path
