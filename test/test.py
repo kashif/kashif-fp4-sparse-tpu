@@ -115,9 +115,11 @@ async def spi_send(dut, instr):
         drive(bit, 0, 1)                      # rising edge samples the bit
         await ClockCycles(dut.clk, SCLK_HALF)
     drive(0, 1, 0)                            # CS high between instructions
-    # Leave time for the clk-domain data_ready pulse and execution
-    # (a RUN needs 8 cycles; this gap covers it).
-    await ClockCycles(dut.clk, 12)
+    # Leave time for the clk-domain data_ready pulse and execution.
+    # RUN now time-multiplexes one PE across all 9 outputs: 1 issue
+    # cycle + 9 x (4 accumulate + 1 commit) = 46 cycles worst case;
+    # this gap covers it with margin.
+    await ClockCycles(dut.clk, 60)
 
 
 async def hw_reset(dut):

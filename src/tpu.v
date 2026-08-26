@@ -1,12 +1,19 @@
 /*
  * 1:2-sparse E2M1 x INT8 mini-TPU core: control + operand memories +
- * 3x3 systolic array + result readout mux.
+ * ONE time-multiplexed PE + result memory + result readout mux.
  *
  * Computes C = A x W with A a 3x8 INT8 activation matrix and W a
  * dense-equivalent 8x3 E2M1 weight matrix stored as 12 five-bit codes
  * {select, e2m1} (1:2 structured sparsity along the contraction
  * axis). Results are exact 14-bit signed values in the x2 integer
  * domain, read out one byte at a time via STORE.
+ *
+ * A single PE computes all 9 outputs sequentially (see control.v) --
+ * the same datapath as the original 9-PE parallel array, reused nine
+ * times per RUN. This is free: RUN's ~45-cycle latency is still a
+ * small fraction of the ~1500 SPI clocks a RUN's operands take to
+ * load, and removes the multi-port memory reads and per-PE
+ * accumulator registers a spatial 3x3 array required.
  */
 
 `default_nettype none
@@ -20,8 +27,8 @@ module tpu (
     output wire [7:0]  result
 );
 
-    wire        array_write_enable;
-    wire        array_clear;
+    wire        pe_we;
+    wire        pe_clr;
     wire        dense_mode;
     wire [1:0]  store_row, store_col;
     wire        store_byte_sel;
@@ -30,43 +37,55 @@ module tpu (
     wire        mema_write_enable;
     wire [1:0]  mema_write_line;
     wire [2:0]  mema_write_elem;
-    wire [2:0]  mema_read_enable;
-    wire [11:0] mema_read_sel;
+    wire        mema_read_enable;
+    wire [1:0]  mema_read_row;
+    wire [1:0]  mema_read_pair;
 
     wire [4:0]  memb_data_in;
     wire        memb_write_enable;
     wire [1:0]  memb_write_line;
     wire [1:0]  memb_write_elem;
-    wire [2:0]  memb_read_enable;
-    wire [11:0] memb_read_sel;
+    wire        memb_read_enable;
+    wire [1:0]  memb_read_col;
+    wire [1:0]  memb_read_pair;
 
-    wire [47:0]  array_a_in;
-    wire [14:0]  array_b_in;
-    wire [125:0] array_data_out;
+    wire        result_write_enable;
+    wire [1:0]  result_write_row;
+    wire [1:0]  result_write_col;
+
+    wire [15:0] pe_a_in;
+    wire [4:0]  pe_b_in;
+    wire signed [13:0] pe_c_out;
+    wire signed [13:0] selected;
 
     control control_unit (
-        .clk                (clk),
-        .rst_n              (rst_n),
-        .instruction        (instruction),
-        .array_write_enable (array_write_enable),
-        .array_clear        (array_clear),
-        .dense_mode         (dense_mode),
-        .store_row          (store_row),
-        .store_col          (store_col),
-        .store_byte_sel     (store_byte_sel),
-        .mema_data_in       (mema_data_in),
-        .mema_write_enable  (mema_write_enable),
-        .mema_write_line    (mema_write_line),
-        .mema_write_elem    (mema_write_elem),
-        .mema_read_enable   (mema_read_enable),
-        .mema_read_sel      (mema_read_sel),
-        .memb_data_in       (memb_data_in),
-        .memb_write_enable  (memb_write_enable),
-        .memb_write_line    (memb_write_line),
-        .memb_write_elem    (memb_write_elem),
-        .memb_read_enable   (memb_read_enable),
-        .memb_read_sel      (memb_read_sel),
-        .ready_to_send      (ready_to_send)
+        .clk                  (clk),
+        .rst_n                (rst_n),
+        .instruction          (instruction),
+        .pe_we                (pe_we),
+        .pe_clr               (pe_clr),
+        .dense_mode           (dense_mode),
+        .store_row            (store_row),
+        .store_col            (store_col),
+        .store_byte_sel       (store_byte_sel),
+        .mema_data_in         (mema_data_in),
+        .mema_write_enable    (mema_write_enable),
+        .mema_write_line      (mema_write_line),
+        .mema_write_elem      (mema_write_elem),
+        .mema_read_enable     (mema_read_enable),
+        .mema_read_row        (mema_read_row),
+        .mema_read_pair       (mema_read_pair),
+        .memb_data_in         (memb_data_in),
+        .memb_write_enable    (memb_write_enable),
+        .memb_write_line      (memb_write_line),
+        .memb_write_elem      (memb_write_elem),
+        .memb_read_enable     (memb_read_enable),
+        .memb_read_col        (memb_read_col),
+        .memb_read_pair       (memb_read_pair),
+        .result_write_enable  (result_write_enable),
+        .result_write_row     (result_write_row),
+        .result_write_col     (result_write_col),
+        .ready_to_send        (ready_to_send)
     );
 
     memory_a memory_act (
@@ -76,8 +95,9 @@ module tpu (
         .write_elem   (mema_write_elem),
         .data_in      (mema_data_in),
         .read_enable  (mema_read_enable),
-        .read_sel     (mema_read_sel),
-        .data_out     (array_a_in)
+        .read_row     (mema_read_row),
+        .read_pair    (mema_read_pair),
+        .data_out     (pe_a_in)
     );
 
     memory_b memory_wgt (
@@ -87,38 +107,38 @@ module tpu (
         .write_elem   (memb_write_elem),
         .data_in      (memb_data_in),
         .read_enable  (memb_read_enable),
-        .read_sel     (memb_read_sel),
-        .data_out     (array_b_in)
+        .read_col     (memb_read_col),
+        .read_pair    (memb_read_pair),
+        .data_out     (pe_b_in)
     );
 
-    array array_inst (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .we       (array_write_enable),
-        .clr      (array_clear),
-        .dense    (dense_mode),
-        .a_in     (array_a_in),
-        .b_in     (array_b_in),
-        .data_out (array_data_out)
+    // One PE, time-multiplexed across all 9 outputs. a_out/b_out are
+    // systolic pass-through ports for neighboring PEs -- unused here
+    // (no neighbors), left unconnected so synthesis drops a_reg/b_reg.
+    pe pe_inst (
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .we     (pe_we),
+        .clr    (pe_clr),
+        .dense  (dense_mode),
+        .a_in   (pe_a_in),
+        .b_in   (pe_b_in),
+        .a_out  (),
+        .b_out  (),
+        .c_out  (pe_c_out)
     );
 
-    // ------------------------------------------------------------------
-    // Result readout: STORE latches {row, col, byte_sel}; the selected
-    // accumulator byte drives `result` until the next STORE.
-    // ------------------------------------------------------------------
-    wire [13:0] acc [0:8];
-    genvar i;
-    generate
-        for (i = 0; i < 9; i = i + 1) begin : extract_results
-            assign acc[i] = array_data_out[14*i +: 14];
-        end
-    endgenerate
-
-    // Index arithmetic in 4 bits — 2-bit operands would wrap modulo 4
-    wire [3:0] sel_idx = {2'b0, store_row} * 4'd3 + {2'b0, store_col};
-    wire [13:0] selected = (store_row < 2'd3 && store_col < 2'd3)
-        ? acc[sel_idx]
-        : 14'd0;
+    result_mem result_store (
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .write_enable (result_write_enable),
+        .write_row    (result_write_row),
+        .write_col    (result_write_col),
+        .write_data   (pe_c_out),
+        .read_row     (store_row),
+        .read_col     (store_col),
+        .read_data    (selected)
+    );
 
     assign result = store_byte_sel ? {2'b0, selected[13:8]}
                                    : selected[7:0];

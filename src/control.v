@@ -1,7 +1,5 @@
 /*
- * Control unit — ported from the reference mini-TPU control.v,
- * widened to a 16-bit instruction and extended with accumulator
- * clear and 2-byte result readout.
+ * Control unit -- time-multiplexed single-PE sequencer.
  *
  * Instruction format (16 bits, sent LSB-first over SPI):
  *
@@ -13,25 +11,25 @@
  *          [7:0]   imm   (A: INT8 byte, B: {select, e2m1} in imm[4:0])
  *
  *   RUN:   [13] dense_mode (0 = 1:2 sparse K=8, 1 = dense E2M1 K=4)
- *          Clears accumulators, streams the skewed wavefront for
- *          8 cycles (4 weight-code steps either way — sparse covers
- *          two contraction steps per code, dense covers one).
+ *          Sequences all 9 (row,col) outputs through ONE physical PE:
+ *          for each output, 4 accumulate cycles (one per weight-code
+ *          slot, matching the original per-RUN K=8 sparse / K=4
+ *          dense contraction depth exactly -- same PE, same
+ *          datapath, same accumulator width, just one output at a
+ *          time instead of nine in parallel) followed by a commit
+ *          cycle that latches the finished accumulator into
+ *          result_mem and clears the PE for the next output. Total
+ *          latency ~45 cycles -- still under 5% of the ~1500-cycle
+ *          SPI transfer time a RUN's operands take to load, so the
+ *          9x serialization is free in practice (this is why: with
+ *          no skewed wavefront to feed, a single read port per
+ *          memory replaces the old 3-concurrent-port design).
  *
  *   STORE: [13]    byte_sel (0 = acc[7:0], 1 = {2'b0, acc[13:8]})
  *          [12:11] row, [10:9] col
  *          Latches the selection; result output holds until next STORE.
- *
- * Memories A and B share the same skewed read pattern (line i active
- * during counter in [i+1, i+4], element walking 0,1,2,3) — the
- * reference schedule with one extra element step; one sparse pair
- * step has the same schedule as one dense step, which is exactly the
- * 2x throughput claim. Two sparse RUNs cover exactly one NVFP4
- * 16-element block (K=8 dense-equivalent per RUN).
- *
- * The per-row pair select is produced directly as a one-hot 4-bit
- * code from the counter comparisons (rather than encoded to a 2-bit
- * binary index) so the memories can select with an OR-of-AND mux
- * instead of decoding an address first.
+ *          Reads result_mem, which (like the old per-PE accumulators)
+ *          holds every output until the next RUN overwrites it.
  */
 
 `default_nettype none
@@ -41,8 +39,8 @@ module control (
     input  wire        rst_n,
     input  wire [15:0] instruction,
 
-    output wire        array_write_enable,
-    output wire        array_clear,
+    output wire        pe_we,       // accumulate this cycle
+    output wire        pe_clr,      // clear PE accumulator (new output starting)
     output reg         dense_mode,
     output reg  [1:0]  store_row,
     output reg  [1:0]  store_col,
@@ -52,15 +50,21 @@ module control (
     output wire        mema_write_enable,
     output wire [1:0]  mema_write_line,
     output wire [2:0]  mema_write_elem,
-    output wire [2:0]  mema_read_enable,
-    output wire [11:0] mema_read_sel,
+    output wire        mema_read_enable,
+    output wire [1:0]  mema_read_row,
+    output wire [1:0]  mema_read_pair,
 
     output wire [4:0]  memb_data_in,
     output wire        memb_write_enable,
     output wire [1:0]  memb_write_line,
     output wire [1:0]  memb_write_elem,
-    output wire [2:0]  memb_read_enable,
-    output wire [11:0] memb_read_sel,
+    output wire        memb_read_enable,
+    output wire [1:0]  memb_read_col,
+    output wire [1:0]  memb_read_pair,
+
+    output wire        result_write_enable,
+    output wire [1:0]  result_write_row,
+    output wire [1:0]  result_write_col,
 
     output reg         ready_to_send
 );
@@ -68,10 +72,6 @@ module control (
     localparam [1:0] RUN   = 2'b01;
     localparam [1:0] LOAD  = 2'b10;
     localparam [1:0] STORE = 2'b11;
-
-    // Wavefront counter: useful range 1..8 (last product forms at
-    // r+c+1+j = 2+2+1+3 = 8)
-    reg [3:0] counter;
 
     wire [1:0] opcode     = instruction[15:14];
     wire       mem_select = instruction[13];
@@ -81,50 +81,91 @@ module control (
 
     wire is_load  = (opcode == LOAD);
     wire is_store = (opcode == STORE);
-    wire is_run   = (opcode == RUN) || (counter > 0);
 
-    // Latch the weight format on each RUN; stationary during the wavefront.
+    // ------------------------------------------------------------------
+    // Sequencer: (cur_row, cur_col) walk the 9 outputs row-major; step
+    // walks the 4 weight-code slots of the current output. `running`
+    // gates the 4 accumulate cycles; `commit` is the 1-cycle pulse
+    // that latches the finished output and advances to the next (or
+    // signals done on the last one).
+    // ------------------------------------------------------------------
+    reg [1:0] cur_row, cur_col;
+    reg [1:0] step;
+    reg       running;
+    reg       commit;
+
+    wire is_run_issue = (opcode == RUN) && !running && !commit;
+    wire last_output   = (cur_row == 2'd2) && (cur_col == 2'd2);
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             dense_mode <= 1'b0;
-        else if (opcode == RUN && counter == 4'd0)
+        else if (is_run_issue)
             dense_mode <= instruction[13];
     end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter       <= 4'd0;
+            cur_row       <= 2'd0;
+            cur_col       <= 2'd0;
+            step          <= 2'd0;
+            running       <= 1'b0;
+            commit        <= 1'b0;
             ready_to_send <= 1'b0;
-        end else if (counter == 4'd8) begin
-            counter       <= 4'd0;
-            ready_to_send <= 1'b1;
-        end else if (is_run)
-            counter <= counter + 4'd1;
-        else
+        end else begin
             ready_to_send <= 1'b0;
+            if (is_run_issue) begin
+                cur_row <= 2'd0;
+                cur_col <= 2'd0;
+                step    <= 2'd0;
+                running <= 1'b1;
+                commit  <= 1'b0;
+            end else if (running) begin
+                if (step == 2'd3) begin
+                    running <= 1'b0;
+                    commit  <= 1'b1;
+                end else begin
+                    step <= step + 2'd1;
+                end
+            end else if (commit) begin
+                commit <= 1'b0;
+                if (last_output) begin
+                    ready_to_send <= 1'b1;
+                end else begin
+                    if (cur_col == 2'd2) begin
+                        cur_row <= cur_row + 2'd1;
+                        cur_col <= 2'd0;
+                    end else begin
+                        cur_col <= cur_col + 2'd1;
+                    end
+                    step    <= 2'd0;
+                    running <= 1'b1;
+                end
+            end
+        end
     end
 
-    // ------------------------------------------------------------------
-    // Shared skewed read pattern (identical for A rows and B columns):
-    // line i streams its 4 elements during counter in [i+1, i+4].
-    // ------------------------------------------------------------------
-    wire [2:0]  read_enable_shared;
-    wire [11:0] read_sel_shared;   // one-hot: 4 bits per row, which pair
+    // Memory reads: single port each, addressed by the current output
+    // and weight-code step -- valid throughout `running`.
+    assign mema_read_enable = running;
+    assign mema_read_row    = cur_row;
+    assign mema_read_pair   = step;
 
-    genvar i;
-    generate
-        for (i = 0; i < 3; i = i + 1) begin : read_pattern_gen
-            assign read_enable_shared[i] = (counter > i) && (counter < (i + 5));
-            assign read_sel_shared[4*i +: 4] =
-                {(counter == (i + 4)), (counter == (i + 3)),
-                 (counter == (i + 2)), (counter == (i + 1))};
-        end
-    endgenerate
+    assign memb_read_enable = running;
+    assign memb_read_col    = cur_col;
+    assign memb_read_pair   = step;
 
-    assign mema_read_enable = read_enable_shared;
-    assign memb_read_enable = read_enable_shared;
-    assign mema_read_sel    = read_sel_shared;
-    assign memb_read_sel    = read_sel_shared;
+    // PE control: accumulate while running; clear one cycle before
+    // the first accumulate of an output (issue, or the commit cycle
+    // that precedes the next output) -- harmless on the very last
+    // commit, since the next RUN clears again anyway.
+    assign pe_we  = running;
+    assign pe_clr = is_run_issue || commit;
+
+    // Result memory: latch the finished accumulator on the commit cycle.
+    assign result_write_enable = commit;
+    assign result_write_row    = cur_row;
+    assign result_write_col    = cur_col;
 
     // ------------------------------------------------------------------
     // Write path
@@ -157,10 +198,5 @@ module control (
             store_byte_sel <= instruction[13];
         end
     end
-
-    assign array_write_enable = is_run;
-    // Clear accumulators on the RUN-issue cycle; the wavefront reads are
-    // still disabled then (counter == 0), so no products are lost.
-    assign array_clear        = (opcode == RUN) && (counter == 4'd0);
 
 endmodule
