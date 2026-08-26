@@ -31,12 +31,14 @@ module tpu (
     wire [1:0]  mema_write_line;
     wire [2:0]  mema_write_elem;
     wire [2:0]  mema_read_enable;
+    wire [5:0]  mema_read_elem;
 
     wire [4:0]  memb_data_in;
     wire        memb_write_enable;
     wire [1:0]  memb_write_line;
     wire [1:0]  memb_write_elem;
     wire [2:0]  memb_read_enable;
+    wire [5:0]  memb_read_elem;
 
     wire [47:0]  array_a_in;
     wire [14:0]  array_b_in;
@@ -57,11 +59,13 @@ module tpu (
         .mema_write_line    (mema_write_line),
         .mema_write_elem    (mema_write_elem),
         .mema_read_enable   (mema_read_enable),
+        .mema_read_elem     (mema_read_elem),
         .memb_data_in       (memb_data_in),
         .memb_write_enable  (memb_write_enable),
         .memb_write_line    (memb_write_line),
         .memb_write_elem    (memb_write_elem),
         .memb_read_enable   (memb_read_enable),
+        .memb_read_elem     (memb_read_elem),
         .ready_to_send      (ready_to_send)
     );
 
@@ -72,6 +76,7 @@ module tpu (
         .write_elem   (mema_write_elem),
         .data_in      (mema_data_in),
         .read_enable  (mema_read_enable),
+        .read_pair    (mema_read_elem),
         .data_out     (array_a_in)
     );
 
@@ -82,6 +87,7 @@ module tpu (
         .write_elem   (memb_write_elem),
         .data_in      (memb_data_in),
         .read_enable  (memb_read_enable),
+        .read_slot    (memb_read_elem),
         .data_out     (array_b_in)
     );
 
