@@ -6,7 +6,6 @@ project:
   description:  "3x3 systolic array with 1:2-sparse E2M1 (NVFP4/MXFP4 element) weights and INT8 activations, no hardware multiplier: FP4 magnitudes are (1 or 3)<<shift, so each product is a shift-add. Dense E2M1 mode at half rate runs off-the-shelf FP4-quantized models."
   language:     "Verilog"
   clock_hz:     5000000
-  wokwi_id:     "469597729208786945"  # registered TT slot; repo URL repointed here from tt-e2m1-x-ternary
 
   tiles: "1x2"
   top_module:  "tt_um_kashif_fp4_sparse_tpu"
