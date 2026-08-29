@@ -5,10 +5,11 @@
 **Top module:** `tt_um_kashif_fp4_sparse_tpu`
 **Clock:** 10 MHz (SPI SCLK <= clk/6, about 1.67 MHz)
 **Result:** 12 cocotb tests, 16,384-case exhaustive PE test, controller
-busy/sticky-ready test, and 11 host tests passing. The preceding serialized-PE layout measured 70.1% GPL /
-60.6% effective on 1x2 (down from 62.5% GPL / 53.6% effective on 2x2 for
-the original 9-PE parallel array — ~47% total chip area reduction); physical
-signoff must be rerun for the single-clock SPI revision.
+busy/sticky-ready test, and 11 host tests passing. The TTSKY26c production
+flow passes GDS, viewer, precheck, and gate-level simulation on the required
+1x2 tile. Final routed multi-corner STA has zero setup/hold violations
+(worst setup +70.8412 ns, worst hold +0.0576 ns at 10 MHz); routed DRC,
+Magic DRC, LVS, and antenna violation counts are all zero.
 
 ---
 
@@ -42,7 +43,9 @@ bit-for-bit.
 | Activation functions | Host-side (correct only after cross-tile accumulation) |
 | I/O | SPI, 16-bit instructions, receive-only; results via STORE on uo_out |
 | RUN latency | ~45 cycles (9 outputs x (4 accumulate + 1 commit)) |
-| Tile | 1x2 (preceding revision measured 70.1% GPL / 60.6% effective; re-signoff pending) |
+| Tile | 1x2; final standard-cell utilization 80.54% |
+| Physical checks | GDS/viewer/precheck/GL green; route DRC 0, Magic DRC 0, LVS 0, antenna 0 |
+| Routed STA | 10 MHz, 9 corners, setup/hold TNS 0; worst setup +70.8412 ns, worst hold +0.0576 ns |
 
 ## 3. Architecture
 
@@ -143,13 +146,22 @@ See `Architecture.drawio` and `Dataflow.drawio`.
   not a derived design limit, and disagreed with the already-used 100 ns
   physical-flow constraint. Metadata, RTL tests, and `config.json` now all
   specify 10 MHz (`CLOCK_PERIOD = 100 ns`). Tiny Tapeout's platform maximum
-  is not the design's guaranteed frequency; the new RTL still requires a
-  fresh timing/layout signoff.
+  is not the design's guaranteed frequency; this revision has clean routed
+  setup/hold timing at the stated 10 MHz constraint.
 - **Physical-flow headroom.** The single-clock SPI revision initially
   reached CTS with more than 75 ns setup slack, but a 0.10 ns optional hold
   margin inserted 443 buffers (+18.1% area) and exhausted four placement
-  sites. The margin is now 0.05 ns and placement target density 80%; final
-  routed STA remains the acceptance criterion.
+  sites. Both values are user-editable fields above the Tiny Tapeout
+  template's "do not change below" marker. A 0.05 ns hold margin and 80%
+  placement target completed the required 1x2 flow with 258 hold buffers,
+  80.54% final standard-cell utilization, and +0.0576 ns worst routed hold
+  slack. Final setup/hold TNS is zero at all nine analyzed corners.
+- **Remaining electrical-rule warnings.** Although the official GDS action
+  and precheck pass, post-route STA reports 688 maximum-slew violations at
+  the worst slow corner and one marginal maximum-capacitance violation
+  (-0.00009 pF). These are not setup/hold, DRC, LVS, or antenna failures,
+  but should be reduced or explicitly accepted before tapeout; high 1x2
+  utilization limits further automatic buffering.
 - **Operand initialization.** Control, SPI, PE, and result state reset.
   Operand memories intentionally do not reset to save area, so software
   must load every operand it uses before the first RUN.
@@ -185,6 +197,8 @@ synthesized netlist with VPWR/VGND wiring in `tb.v`. The SPI driver's
 post-instruction wait was widened from 12 to 60 cycles to cover RUN's new
 ~45-cycle worst case (was 8 cycles for the parallel array) — a testbench
 timing parameter only; it has no effect on real SPI/clock timing.
+The production gate-level workflow passes for this revision, along with the
+Tiny Tapeout GDS viewer and precheck jobs.
 `pe-test` independently exhausts both modes, both select values, all 16
 E2M1 nibbles, and all 256 activation bytes (16,384 products). The host test
 checks ISA encoders, signed 14-bit result decoding, validation, and the

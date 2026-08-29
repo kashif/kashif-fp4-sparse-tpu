@@ -185,10 +185,12 @@ A direct controller test covers busy-command rejection and sticky completion.
 ## Target
 
 - **Shuttle**: TTSKY26c (SkyWater SKY130A)
-- **Tile**: 1x2 (2 tiles of ~167x108 um) — the preceding serialized-PE
-  revision measured 70.1% GPL / 60.6% effective utilization; rerun physical
-  signoff for this single-clock SPI revision before tapeout
+- **Tile**: 1x2 (2 tiles of ~167x108 um) — production GDS, precheck, and
+  gate-level simulation pass; final standard-cell utilization is 80.54%
 - **Clock**: 10 MHz (SPI SCLK <= 1.67 MHz)
+- **Routed timing**: zero setup/hold violations across nine corners; worst
+  setup +70.8412 ns, worst hold +0.0576 ns. Maximum-slew warnings at slow
+  corners remain a pre-tapeout physical-quality follow-up (see REPORT.md).
 
 ## References
 

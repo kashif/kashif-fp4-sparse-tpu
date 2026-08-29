@@ -113,6 +113,10 @@ Run the cocotb testbench:
 ```
 cd test
 make -B
+make pe-test
+make control-test
+cd ..
+python -m pytest -p no:rerunfailures test/test_host.py
 ```
 
 The suite drives the SPI interface exactly like an external host and checks
@@ -126,6 +130,19 @@ maximum-rate SPI, sticky ready, and randomized full-coverage trials. An
 exhaustive PE test covers all 16,384 input/mode combinations. It also checks
 that partial sums from blocks
 with different scales are dequantized before being combined.
+
+The production TTSKY26c flow also passes GDS generation, Tiny Tapeout
+precheck, and gate-level simulation on the required **1x2 tile**. At the
+10 MHz constraint, final routed multi-corner STA reports zero setup and hold
+violations (worst setup slack +70.8412 ns, worst hold slack +0.0576 ns).
+Routed DRC, Magic DRC, LVS, and antenna violation counts are zero; final
+standard-cell utilization is 80.54%.
+
+One physical-quality gap remains despite the passing production checks:
+post-route STA reports maximum-transition warnings at slow process corners
+(688 in the worst corner) and one marginal maximum-capacitance warning.
+They do not change functional behavior or the 10 MHz setup/hold result, but
+should be reduced or explicitly reviewed before tapeout.
 
 ## External hardware
 
