@@ -13,8 +13,8 @@ sparsity along the contraction axis *and* a 4-bit float element — with
 higher-precision INT8 activations, the side that is hardest to quantize.
 
 The math runs on **one time-multiplexed processing element**, not a
-spatial array: a SPI-driven design is completely SPI-bound (a RUN's
-operands take ~1500 SPI clocks to load), so a RUN's compute latency is
+spatial array: a SPI-driven design is completely SPI-bound (the 36 operand
+instructions require at least 3456 `clk` cycles at SCLK <= clk/6), so a RUN's compute latency is
 practically free no matter how many outputs share one PE. The original
 3x3 systolic array spent 58% of its flip-flops and most of its
 combinational logic on 9-way spatial parallelism that bought nothing;
@@ -45,8 +45,9 @@ block** (four cover an MXFP4 32-block), so host-side block scaling aligns
 with no padding.
 
 Results are exact 14-bit signed integers (max |C| = 6144). Block scaling
-happens on the host during dequantization, which makes the chip
-element-level format-agnostic: apply E4M3 scales per 16-element block
+happens on the host during dequantization: scale each block's partial sum
+before adding it to other blocks, `C = sum_b((D_b / 2) * partial_b)`.
+This makes the chip element-level format-agnostic: apply E4M3 scales per 16-element block
 (+ FP32 tensor scale) for **NVFP4** semantics, or E8M0 power-of-two scales
 per 32-element block for **MXFP4**. The exact accumulators let the host
 apply per-block scales (including four-over-six adaptive scaling and
@@ -58,8 +59,9 @@ The RUN instruction's `d` flag switches to **dense** operation: each code's
 E2M1 nibble is a weight for ONE contraction step (K = 4, half throughput,
 select bit ignored, only even activation elements participate) — the same
 trade NVIDIA makes running dense on 2:4-sparse tensor cores. This is plain
-dense FP4-weight x INT8-activation matmul for off-the-shelf
-NVFP4/MXFP4-quantized models that were not sparsified.
+dense FP4-weight x INT8-activation matmul. E2M1 checkpoint weights can be
+streamed after the host quantizes activations to INT8 and handles all block
+and tensor scales; it is not native FP4-activation execution.
 
 SPI protocol follows the proven reference mini-TPU
 ([MILOUDIAS/IEEE_ttsky_mini_tpu_spi](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_spi)),
@@ -79,8 +81,8 @@ partial-sum accumulation and bias, which happen on the host anyway.
 | `RUN`       | `01 d 0000000000000`   | Clear accumulators, run all 9 outputs on one PE (~45 cycles); `d`=0 sparse (K=8), `d`=1 dense E2M1 (K=4) |
 | `STORE`     | `11 b rr cc 000000000` | Drive byte `b` (0 = acc[7:0], 1 = acc[13:8]) of C[r][c] on `uo_out` |
 
-SCLK must be at most clk/6 (the SPI bit counter crosses clock domains
-unsynchronised, as in the reference). The `ready` pin (uio[1]) pulses when a
+SCLK must be at most clk/6. A completed-word toggle is synchronized into the
+`clk` domain before the stable instruction is consumed. The `ready` pin (uio[1]) pulses when a
 RUN completes; alternatively just wait ~45+ clock cycles. The SPI is
 receive-only: all results are read via STORE on `uo_out`, from a small
 result memory that holds all 9 outputs until the next RUN overwrites them
@@ -115,9 +117,11 @@ and sparse-code decode from first principles, then a plain matrix multiply).
 It includes select-bit routing, both modes with per-RUN mode latching,
 negative-zero handling, a non-degeneracy test (equal-sum activation
 matrices must produce different results), accumulator-clear checks, and
-randomized full-coverage trials.
+randomized full-coverage trials. It also checks that partial sums from blocks
+with different scales are dequantized before being combined.
 
 ## External hardware
 
 None required. Any SPI-capable host (e.g. the demo board's RP2040) drives
-MOSI/CS/SCLK and reads result bytes on `uo_out`.
+MOSI/CS/SCLK and reads result bytes on `uo_out`. Operand memories do not reset
+to save area, so the host must load every operand used before the first RUN.

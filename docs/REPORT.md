@@ -4,7 +4,7 @@
 **Target:** Tiny Tapeout TTSKY26c, 1x2 tile, SkyWater SKY130A
 **Top module:** `tt_um_kashif_fp4_sparse_tpu`
 **Clock:** 5 MHz (SPI SCLK <= clk/6)
-**Result:** 9 cocotb tests passing (RTL + GL); measured 70.1% GPL / 60.6%
+**Result:** 11 cocotb tests passing; measured 70.1% GPL / 60.6%
 effective on 1x2 (down from 62.5% GPL / 53.6% effective on 2x2 for the
 original 9-PE parallel array — ~47% total chip area reduction)
 
@@ -23,7 +23,7 @@ A later revision (this document) re-architects *how* that datapath is
 executed — from a spatial 9-PE systolic array down to one time-multiplexed
 PE — to shrink the design from a 2x2 to a 1x2 tile. The numerics are
 untouched: same E2M1 element set, same 1:2 sparsity, same K=8/dense K=4,
-same exact 14-bit accumulation, same golden model, same 9/9 tests passing
+same exact 14-bit accumulation and the same golden arithmetic model
 bit-for-bit.
 
 ## 2. Design Metrics
@@ -57,10 +57,10 @@ bits) times 9 PEs is 315 bits — 58% of the design's entire flip-flop count
 — and the shift-add datapath (mux, adder, shifter, negate) was replicated
 9x on top of that.
 
-None of that parallelism was earning its keep. A RUN's operands take
-~1500 SPI clocks to load (16-bit instructions, SCLK <= clk/6); the RUN
-itself, even fully serialized to one PE, takes ~45 cycles — under 5% of
-the load time. Spatial parallelism was free-to-remove area, not a
+None of that parallelism was earning its keep. A RUN's 36 operand
+instructions take at least 3456 `clk` cycles to transfer at SCLK <= clk/6;
+the RUN itself, even fully serialized to one PE, takes ~45 cycles — about
+1.3% of the minimum load time. Spatial parallelism was free-to-remove area, not a
 performance requirement.
 
 ### The new architecture
@@ -128,7 +128,14 @@ See `Architecture.drawio` and `Dataflow.drawio`.
      real CI run (gds + gl_test + precheck, all green) at `tiles: "1x2"`.
 - **Receive-only SPI** (from the ternary chip): the MISO readback stream
   duplicated the STORE readout path; dropped for area.
-- **CLOCK_PERIOD = 100 ns** in config.json matches the real 5 MHz clock.
+- **Safe SPI CDC.** The SCLK domain latches each completed word and toggles
+  a one-bit completion flag. A two-flop synchronizer carries that flag into
+  `clk`; the word has settled before control consumes it. CS deassertion
+  discards partial frames.
+- **CLOCK_PERIOD = 200 ns** in config.json matches the real 5 MHz clock.
+- **Operand initialization.** Control, SPI, PE, and result state reset.
+  Operand memories intentionally do not reset to save area, so software
+  must load every operand it uses before the first RUN.
 - **Constant pins via two shared (* keep *) FFs** — avoids conb/VGND LVS
   merges (reference REPORT.md) without per-pin registers.
 
@@ -148,10 +155,12 @@ the matmul itself).
 | `test_negative_zero` | E2M1 -0 (0x8) contributes exactly zero, either select |
 | `test_not_degenerate` | Equal-sum activations must differ (guards against w*sum collapse) |
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double — exercises `result_mem` reuse across RUNs |
+| `test_spi_partial_frame_abort` | CS deassertion discards a 15-bit frame even if SCLK toggles while idle |
 | `test_dense_e2m1_mode` | Dense mode ignores selects + odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode per trial |
 | `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010): spec-derived NVFP4 quantizer (E4M3 RTN scales, E2M1 RTN values, MSE pick), paper's worked example, exact dequant over 4 dense RUNs |
 | `test_nvfp4_four_over_six_sparse` | Same exactness through the 1:2-sparse path (one 16-block = 2 sparse RUNs) |
+| `test_multiblock_scale_accumulation` | Different block scales are applied to their own integer partial sums before the block contributions are combined |
 
 Gate-level: `GATES=yes` runs the same suite (3 random trials) against the
 synthesized netlist with VPWR/VGND wiring in `tb.v`. The SPI driver's
@@ -185,17 +194,19 @@ converge on (activations are harder to quantize than weights). None of
 this changed with the serialization — it's a pure execution-strategy and
 area optimization.
 
-- **Off-the-shelf FP4 models (dense mode).** Any NVFP4- or MXFP4-quantized
-  checkpoint maps directly: E2M1 nibbles in, INT8 activations in, exact
-  integer partial sums out. No sparsification needed.
+- **E2M1 checkpoint weights (dense mode).** NVFP4/MXFP4 E2M1 weight
+  payloads can be streamed without sparsification after the host quantizes
+  activations to INT8 and manages block/tensor scales. This is W4A8
+  execution, not native FP4-activation execution.
 - **1:2-sparsified FP4 models (sparse mode, 2x).** Weights pruned to 1:2
   along the contraction axis (Roune's recipe: pair columns, prune+finetune)
   run at two contraction steps per weight code and 2.5 bits per dense
   weight position.
 - **Arbitrary layer sizes by tiling.** Each RUN computes a 3x3 output tile
-  over K=8 (dense: K=4). The host accumulates partial sums in int32 —
-  bit-exact, since the chip never rounds — then applies block scales, bias,
-  activation, and requantization. Block alignment is exact: two sparse
+  over K=8 (dense: K=4). The host accumulates RUNs belonging to the same
+  scale block in int32, applies that block's scale, and only then combines
+  contributions from differently-scaled blocks. Bias, activation, and
+  requantization follow the scaled sum. Block alignment is exact: two sparse
   RUNs = one NVFP4 16-element block, four = one MXFP4 32-block, with no
   padding. Four-over-six adaptive scaling and per-token activation scales
   are host-side quantizer choices and need no hardware support.

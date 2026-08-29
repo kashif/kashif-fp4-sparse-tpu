@@ -1,7 +1,7 @@
 /*
- * TT FP4 Sparse Mini-TPU — Tiny Tapeout top level (2x2 tile)
+ * TT FP4 Sparse Mini-TPU — Tiny Tapeout top level (1x2 tile)
  *
- * 3x3 output-stationary systolic array computing C = A x W with
+ * One time-multiplexed PE computing a 3x3 C = A x W output tile with
  * INT8 activations and 1:2-sparse E2M1 (NVFP4/MXFP4 element) weights:
  * each 5-bit weight code {select, e2m1[3:0]} covers two consecutive
  * contraction steps, the select bit muxing which INT8 activation of a

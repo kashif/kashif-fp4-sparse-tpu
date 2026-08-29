@@ -55,7 +55,10 @@ an FP4 element.
 
 The RUN flag `d` runs dense E2M1 x INT8 (K=4, half throughput, select bits
 ignored) — the same trade NVIDIA makes running dense models on 2:4-sparse
-tensor cores. Off-the-shelf NVFP4/MXFP4-quantized models map directly.
+tensor cores. E2M1 weight payloads from NVFP4/MXFP4 checkpoints can be
+streamed after the host quantizes activations to INT8 and handles the
+checkpoint's block and tensor scales; this is not native FP4-activation
+execution.
 
 | Mode | Weights | K per RUN | Rate |
 |------|---------|-----------|------|
@@ -69,10 +72,11 @@ scaling needs no padding.
 ### Exact accumulation, host-side scaling
 
 Results are exact 14-bit signed integers (max |C| = 6144) in the x2 integer
-domain — no rounding anywhere on chip. The host applies whichever block
-scaling it wants during dequantization: E4M3 per 16 elements + FP32 tensor
-scale (**NVFP4**), E8M0 per 32 (**MXFP4**), four-over-six adaptive scaling,
-and per-token activation scales all work on bit-exact partial sums.
+domain — no rounding anywhere on chip. The host applies each block's scale
+to that block's partial sum before combining blocks:
+`C = sum_b((D_b / 2) * partial_b)`. E4M3 per 16 elements + FP32 tensor scale
+(**NVFP4**), E8M0 per 32 (**MXFP4**), four-over-six adaptive scaling, and
+per-token activation scales all work on these bit-exact partial sums.
 Activation functions are host-side too — they are only correct after
 cross-tile accumulation and bias.
 
@@ -84,7 +88,8 @@ silicon-proven [Mini-TPU v2](https://github.com/MILOUDIAS/IEEE_ttsky_mini_tpu_sp
 down). Measuring real synthesis showed the 9 PEs' registers and replicated
 shift-add datapath were the single largest cost in the design — 58% of
 all flip-flops and most of the combinational logic — for a parallelism
-the SPI-bound interface never needed: a RUN's ~1500-cycle SPI load time
+the SPI-bound interface never needed: transferring all 36 operand
+instructions takes at least 3456 `clk` cycles at SCLK <= clk/6
 dwarfs any plausible compute latency. So the array became a single PE,
 sequenced by a `(cur_row, cur_col, step)` controller through all 9
 outputs, row-major, 4 accumulate cycles + 1 commit cycle each:
@@ -96,7 +101,7 @@ RUN issued -> for (row,col) in 9 outputs, row-major:
               ready_to_send
 ```
 
-~45 cycles total — still under 5% of the SPI load time, so the
+~45 cycles total — about 1.3% of the minimum SPI load time, so the
 serialization is free. The PE datapath (`pe.v`) is byte-for-byte
 unchanged; only the execution strategy (spatial -> temporal) and the
 memory read ports (3 concurrent -> 1 each, since there's no more skewed
@@ -131,7 +136,7 @@ src/
   pe.v          # shift-add MAC: E2M1 decode, no multiplier (one instance, reused)
 test/
   tb.v          # Verilog testbench (GL_TEST compatible)
-  test.py       # 9 cocotb tests with independent golden model
+  test.py       # 11 cocotb tests with independent golden model
   Makefile      # icarus/cocotb build
 docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
@@ -140,7 +145,7 @@ info.yaml       # TT metadata: 1x2 tile, 5 MHz, SKY130A
 
 ## Verification
 
-9 cocotb tests drive the SPI interface like an external host and compare all
+11 cocotb tests drive the SPI interface like an external host and compare all
 9 results against an independent golden model:
 
 | Test | Description |
@@ -150,14 +155,18 @@ info.yaml       # TT metadata: 1x2 tile, 5 MHz, SKY130A
 | `test_negative_zero` | E2M1 -0 contributes exactly zero (either select) |
 | `test_not_degenerate` | Equal-sum activations must differ (guards against w*sum collapse) |
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double |
+| `test_spi_partial_frame_abort` | A 15-bit frame discarded by CS cannot execute as an instruction |
 | `test_dense_e2m1_mode` | Dense mode ignores selects and odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode |
 | `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010) runs on this silicon unchanged: spec-derived NVFP4 quantizer, exact sums, exact dequant |
 | `test_nvfp4_four_over_six_sparse` | Same 4/6 exactness through the 1:2-sparse path (one 16-block = 2 RUNs) |
+| `test_multiblock_scale_accumulation` | Different per-block scales are applied before block contributions are combined |
 
 Gate-level: `GATES=yes` runs the same suite (3 random trials) against the
-synthesized netlist. All flops have async reset, so no warm-up RUN is
-needed after power-up.
+synthesized netlist. Control, SPI, PE, and result registers have async reset,
+so STORE is defined after power-up. Operand memories intentionally do not
+reset to save area: software must load every operand used before the first
+RUN (later RUNs may deliberately reuse loaded operands).
 
 ## Target
 

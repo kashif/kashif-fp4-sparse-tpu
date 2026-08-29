@@ -11,8 +11,8 @@
  * A single PE computes all 9 outputs sequentially (see control.v) --
  * the same datapath as the original 9-PE parallel array, reused nine
  * times per RUN. This is free: RUN's ~45-cycle latency is still a
- * small fraction of the ~1500 SPI clocks a RUN's operands take to
- * load, and removes the multi-port memory reads and per-PE
+ * small fraction of the >=3456 clk cycles needed to transfer a RUN's
+ * operands at SCLK <= clk/6, and removes the multi-port memory reads and per-PE
  * accumulator registers a spatial 3x3 array required.
  */
 

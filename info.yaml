@@ -3,7 +3,7 @@ project:
   title:        "FP4 Sparse Mini-TPU"
   author:       "Kashif Rasul"
   discord:      "kashf"
-  description:  "3x3 systolic array with 1:2-sparse E2M1 (NVFP4/MXFP4 element) weights and INT8 activations, no hardware multiplier: FP4 magnitudes are (1 or 3)<<shift, so each product is a shift-add. Dense E2M1 mode at half rate runs off-the-shelf FP4-quantized models."
+  description:  "One time-multiplexed PE computes a 3x3 output tile with 1:2-sparse E2M1 weights and INT8 activations, without a hardware multiplier. Dense E2M1-weight mode runs at half the sparse contraction rate; NVFP4/MXFP4 weight payloads require host-side activation quantization and scale handling."
   language:     "Verilog"
   clock_hz:     5000000
 

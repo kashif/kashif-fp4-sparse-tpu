@@ -19,8 +19,9 @@
  *          time instead of nine in parallel) followed by a commit
  *          cycle that latches the finished accumulator into
  *          result_mem and clears the PE for the next output. Total
- *          latency ~45 cycles -- still under 5% of the ~1500-cycle
- *          SPI transfer time a RUN's operands take to load, so the
+     *          latency ~45 cycles -- about 1.3% of the >=3456 clk cycles
+     *          needed to transfer a RUN's 36 operand instructions at
+     *          SCLK <= clk/6, so the
  *          9x serialization is free in practice (this is why: with
  *          no skewed wavefront to feed, a single read port per
  *          memory replaces the old 3-concurrent-port design).

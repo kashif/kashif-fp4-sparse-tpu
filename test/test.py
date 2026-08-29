@@ -122,6 +122,36 @@ async def spi_send(dut, instr):
     await ClockCycles(dut.clk, 60)
 
 
+async def spi_abort_after_15_bits(dut, instr):
+    """Send an incomplete frame, deassert CS, then clock SCLK while idle.
+
+    A partial frame must be discarded rather than decoded when the old
+    bit-counter value is reset.  Fifteen bits are intentional: for RUN,
+    the omitted bit 15 is zero, so the partial buffer otherwise looks like
+    a complete RUN instruction.
+    """
+    def drive(mosi, cs, sclk):
+        dut.ui_in.value = (mosi << PIN_MOSI) | (cs << PIN_CS) | (sclk << PIN_SCLK)
+
+    drive(0, 0, 0)
+    await ClockCycles(dut.clk, SCLK_HALF)
+    for i in range(15):
+        bit = (instr >> i) & 1
+        drive(bit, 0, 0)
+        await ClockCycles(dut.clk, SCLK_HALF)
+        drive(bit, 0, 1)
+        await ClockCycles(dut.clk, SCLK_HALF)
+
+    # Abort, then provide an idle SCLK edge. The legacy wrap detector
+    # incorrectly treated this reset edge as completion of the 15-bit word.
+    drive(0, 1, 0)
+    await ClockCycles(dut.clk, SCLK_HALF)
+    drive(0, 1, 1)
+    await ClockCycles(dut.clk, SCLK_HALF)
+    drive(0, 1, 0)
+    await ClockCycles(dut.clk, 60)
+
+
 async def hw_reset(dut):
     dut.ena.value = 1
     dut.ui_in.value = 1 << PIN_CS   # CS idle high
@@ -171,7 +201,7 @@ def check(dut, got, expected, label):
 
 
 def start_clock(dut):
-    cocotb.start_soon(Clock(dut.clk, 100, unit="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 200, unit="ns").start())
 
 
 # ----------------------------------------------------------------------
@@ -287,6 +317,25 @@ async def test_run_clears_accumulators(dut):
                for i in range(N)]
     check(dut, results, expected, "rerun")
     dut._log.info("accumulator clear PASSED")
+
+
+@cocotb.test()
+async def test_spi_partial_frame_abort(dut):
+    """Deasserting CS after 15 bits must discard the apparent RUN."""
+    start_clock(dut)
+    await hw_reset(dut)
+
+    A = [[1] * K for _ in range(N)]
+    # Four +6 weights per column would make every result visibly nonzero.
+    wcodes = [[0x07] * (K // 2) for _ in range(N)]
+    await load_operands(dut, A, wcodes)
+
+    await spi_abort_after_15_bits(dut, instr_run())
+    results = [[await read_result(dut, i, c) for c in range(N)]
+               for i in range(N)]
+    assert results == [[0] * N for _ in range(N)], (
+        f"aborted 15-bit RUN executed unexpectedly: {results}")
+    dut._log.info("partial SPI frame abort PASSED")
 
 
 @cocotb.test()
@@ -529,3 +578,65 @@ async def test_nvfp4_four_over_six_sparse(dut):
                     f"t{t}: sparse dequant C[{i}][{c}] = {(D / 2) * C[i][c]}, "
                     f"float reference = {ref}")
     dut._log.info("NVFP4 4/6 sparse PASSED")
+
+
+@cocotb.test()
+async def test_multiblock_scale_accumulation(dut):
+    """Different block scales apply before cross-block accumulation.
+
+    This is the host contract for arbitrary K: integer RUN results may be
+    accumulated within one scale block, but differently-scaled blocks must
+    be dequantized separately before their contributions are added.
+    """
+    start_clock(dut)
+    await hw_reset(dut)
+
+    rng = random.Random(0xB10C)
+    # Deliberately different ranges force different E4M3 block scales.
+    fp_blocks = [
+        [[rng.uniform(-1, 1) for _ in range(BLOCK)] for _ in range(N)],
+        [[rng.uniform(-16, 16) for _ in range(BLOCK)] for _ in range(N)],
+    ]
+    acts = [[rng.randint(-128, 127) for _ in range(2 * BLOCK)]
+            for _ in range(N)]
+    quant = [[four_over_six(fp_blocks[b][c]) for c in range(N)]
+             for b in range(2)]
+
+    integer_partials = [[[0] * N for _ in range(N)] for _ in range(2)]
+    for b in range(2):
+        for seg in range(4):
+            A = [[0] * K for _ in range(N)]
+            for i in range(N):
+                for j in range(4):
+                    A[i][2 * j] = acts[i][b * BLOCK + 4 * seg + j]
+            wcodes = [
+                [e2m1_encode(quant[b][c][1][4 * seg + j]) for j in range(4)]
+                for c in range(N)
+            ]
+            part = await run_matmul(dut, A, wcodes, dense=1)
+            for i in range(N):
+                for c in range(N):
+                    integer_partials[b][i][c] += part[i][c]
+
+    saw_naive_failure = False
+    for i in range(N):
+        for c in range(N):
+            scaled = sum((quant[b][c][0] / 2) * integer_partials[b][i][c]
+                         for b in range(2))
+            reference = sum(
+                acts[i][b * BLOCK + k] *
+                (quant[b][c][0] * quant[b][c][1][k])
+                for b in range(2) for k in range(BLOCK)
+            )
+            assert scaled == reference, (
+                f"scale-before-sum mismatch C[{i}][{c}]: "
+                f"{scaled} != {reference}")
+
+            # Demonstrate that summing integer partials first and applying
+            # one block's scale is not a valid replacement.
+            naive = (quant[0][c][0] / 2) * sum(
+                integer_partials[b][i][c] for b in range(2))
+            saw_naive_failure |= naive != reference
+
+    assert saw_naive_failure, "test vectors did not distinguish block scales"
+    dut._log.info("multi-block scale accumulation PASSED")

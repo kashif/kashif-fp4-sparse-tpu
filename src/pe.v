@@ -15,13 +15,13 @@
  *
  *  Dense (dense=1): the code is a weight for ONE contraction step;
  *    only the even activation of the pair is used. Half throughput,
- *    same hardware — dense E2M1 x INT8 for off-the-shelf FP4 models.
+ *    same hardware — dense E2M1-weight x INT8-activation operation.
  *
  * There is no multiplier: E2M1 magnitudes are {0,1,2,3,4,6,8,12} =
  * (1 or 3) << shift, so the product is a conditional 3x (one add),
  * a shift, and a conditional negate.
  *
- * All flops have async reset (dfrtp) — avoids the gate-level
+ * The PE flops have async reset (dfrtp) — avoids the gate-level
  * X-poisoning documented in the reference REPORT.md for no-reset
  * dfxtp pipeline registers.
  */
