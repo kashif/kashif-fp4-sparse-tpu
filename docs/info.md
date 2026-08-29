@@ -19,7 +19,7 @@ practically free no matter how many outputs share one PE. The original
 3x3 systolic array spent 58% of its flip-flops and most of its
 combinational logic on 9-way spatial parallelism that bought nothing;
 serializing to one PE — reused across all 9 outputs, ~45 cycles per RUN,
-still under 5% of the SPI load time — cut chip area ~47% and dropped the
+still about 1.3% of the SPI load time — cut chip area ~47% and dropped the
 design from a 2x2 to a **1x2 tile**.
 
 There is **no hardware multiplier anywhere**: every E2M1 magnitude
@@ -81,9 +81,13 @@ partial-sum accumulation and bias, which happen on the host anyway.
 | `RUN`       | `01 d 0000000000000`   | Clear accumulators, run all 9 outputs on one PE (~45 cycles); `d`=0 sparse (K=8), `d`=1 dense E2M1 (K=4) |
 | `STORE`     | `11 b rr cc 000000000` | Drive byte `b` (0 = acc[7:0], 1 = acc[13:8]) of C[r][c] on `uo_out` |
 
-SCLK must be at most clk/6. A completed-word toggle is synchronized into the
-`clk` domain before the stable instruction is consumed. The `ready` pin (uio[1]) pulses when a
-RUN completes; alternatively just wait ~45+ clock cycles. The SPI is
+The system clock is 10 MHz and SCLK must be at most clk/6 (about 1.67 MHz).
+MOSI, CS, and SCLK pass through synchronizers and the receiver runs entirely
+in the system-clock domain; raw SCLK is not an internal clock. Keep CS high
+for at least four system-clock cycles between frames. The `ready` pin
+(uio[1]) stays high when a RUN completes and clears when the next RUN is
+accepted, so a polling host cannot miss it. Instructions received while RUN
+is busy are ignored. Alternatively, wait ~45+ clock cycles. The SPI is
 receive-only: all results are read via STORE on `uo_out`, from a small
 result memory that holds all 9 outputs until the next RUN overwrites them
 (the same "any output, any time" contract the old per-PE accumulators
@@ -116,8 +120,11 @@ the full `C = A x W` result against an **independent golden model** (E2M1
 and sparse-code decode from first principles, then a plain matrix multiply).
 It includes select-bit routing, both modes with per-RUN mode latching,
 negative-zero handling, a non-degeneracy test (equal-sum activation
-matrices must produce different results), accumulator-clear checks, and
-randomized full-coverage trials. It also checks that partial sums from blocks
+matrices must produce different results), exact accumulator limits,
+accumulator-clear checks, every partial SPI-frame length, reset mid-frame,
+maximum-rate SPI, sticky ready, and randomized full-coverage trials. An
+exhaustive PE test covers all 16,384 input/mode combinations. It also checks
+that partial sums from blocks
 with different scales are dequantized before being combined.
 
 ## External hardware

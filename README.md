@@ -120,7 +120,11 @@ array used (`C[i][c] = sum_k A[i][k] * W[k][c]`, K = 8).
 
 Pins: `ui[0]`=MOSI, `ui[1]`=CS, `ui[2]`=SCLK; `uo_out`=result byte;
 `uio[1]`=ready. The SPI is receive-only — results are read via STORE on
-`uo_out`.
+`uo_out`. MOSI, CS, and SCLK are synchronized and sampled by the 10 MHz
+system clock; raw SCLK is never used as an internal clock. Keep SCLK at or
+below `clk/6` and keep CS high for at least four system-clock cycles between
+frames. `ready` stays high after completion until the next accepted RUN.
+LOAD/STORE/RUN instructions received while a RUN is busy are ignored.
 
 ## File structure
 
@@ -128,7 +132,7 @@ Pins: `ui[0]`=MOSI, `ui[1]`=CS, `ui[2]`=SCLK; `uo_out`=result byte;
 src/
   project.v     # Top-level TT module (tt_um_kashif_fp4_sparse_tpu)
   tpu.v         # Core: control + memories + PE + result memory + result mux
-  spi.v         # SPI instruction receiver, 16-bit, receive-only
+  spi.v         # Single-clock, synchronized 16-bit SPI receiver
   control.v     # LOAD/RUN/STORE decode, (row,col,step) sequencer
   memory_a.v    # Activations: 3 rows x 8 INT8, single-port read
   memory_b.v    # Weights: 3 cols x 4 sparse codes {select, e2m1}, single-port read
@@ -136,16 +140,21 @@ src/
   pe.v          # shift-add MAC: E2M1 decode, no multiplier (one instance, reused)
 test/
   tb.v          # Verilog testbench (GL_TEST compatible)
-  test.py       # 11 cocotb tests with independent golden model
+  test.py       # 12 cocotb tests with independent golden model
+  pe_exhaustive_tb.sv # all 16,384 PE input/mode combinations
+  control_busy_tb.sv # busy-command rejection and sticky-ready checks
+  test_host.py  # host ISA/result/scaling helper tests
   Makefile      # icarus/cocotb build
 docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
-info.yaml       # TT metadata: 1x2 tile, 5 MHz, SKY130A
+software/
+  fp4_tpu.py    # dependency-free ISA, signed-result and scaling helpers
+info.yaml       # TT metadata: 1x2 tile, 10 MHz, SKY130A
 ```
 
 ## Verification
 
-11 cocotb tests drive the SPI interface like an external host and compare all
+12 cocotb tests drive the SPI interface like an external host and compare all
 9 results against an independent golden model:
 
 | Test | Description |
@@ -153,9 +162,10 @@ info.yaml       # TT metadata: 1x2 tile, 5 MHz, SKY130A
 | `test_known_matmul` | Hand-checked matmul, mixed E2M1 values, full INT8 range |
 | `test_select_bit_semantics` | select routes the value to k=2j or k=2j+1 |
 | `test_negative_zero` | E2M1 -0 contributes exactly zero (either select) |
+| `test_accumulator_extremes` | Exact signed 14-bit limits: -6144, +6144 and near-limit mixed-sign cases |
 | `test_not_degenerate` | Equal-sum activations must differ (guards against w*sum collapse) |
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double |
-| `test_spi_partial_frame_abort` | A 15-bit frame discarded by CS cannot execute as an instruction |
+| `test_spi_partial_frame_abort` | Every 0..15-bit partial frame and reset mid-frame are discarded; clk/6 transfer and sticky-ready semantics are checked |
 | `test_dense_e2m1_mode` | Dense mode ignores selects and odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode |
 | `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010) runs on this silicon unchanged: spec-derived NVFP4 quantizer, exact sums, exact dequant |
@@ -167,13 +177,18 @@ synthesized netlist. Control, SPI, PE, and result registers have async reset,
 so STORE is defined after power-up. Operand memories intentionally do not
 reset to save area: software must load every operand used before the first
 RUN (later RUNs may deliberately reuse loaded operands).
+An additional exhaustive RTL test checks all 16,384 PE combinations across
+both dense/sparse modes and select values; host-helper tests check instruction
+encoding, signed result decoding, and scale-before-accumulate ordering.
+A direct controller test covers busy-command rejection and sticky completion.
 
 ## Target
 
 - **Shuttle**: TTSKY26c (SkyWater SKY130A)
-- **Tile**: 1x2 (2 tiles of ~167x108 um) — measured 70.1% GPL / 60.6%
-  effective utilization, under the fleet's 65% safe-placement rule
-- **Clock**: 5 MHz (SPI SCLK <= 833 kHz)
+- **Tile**: 1x2 (2 tiles of ~167x108 um) — the preceding serialized-PE
+  revision measured 70.1% GPL / 60.6% effective utilization; rerun physical
+  signoff for this single-clock SPI revision before tapeout
+- **Clock**: 10 MHz (SPI SCLK <= 1.67 MHz)
 
 ## References
 

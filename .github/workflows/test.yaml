@@ -27,6 +27,11 @@ jobs:
         run: |
           cd test
           make clean
+          make pe-test
+          make control-test
+          cd ..
+          python -m pytest -p no:rerunfailures test/test_host.py
+          cd test
           make
           # make will return success even if the test fails, so check for failure in the results.xml
           ! grep failure results.xml

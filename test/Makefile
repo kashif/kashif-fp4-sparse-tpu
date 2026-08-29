@@ -25,3 +25,14 @@ VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 COCOTB_TEST_MODULES = test
 include $(shell cocotb-config --makefiles)/Makefile.sim
+
+.PHONY: pe-test control-test
+pe-test:
+	mkdir -p sim_build/pe
+	iverilog -g2012 -s pe_exhaustive_tb -o sim_build/pe/pe_exhaustive.vvp pe_exhaustive_tb.sv $(SRC_DIR)/pe.v
+	vvp sim_build/pe/pe_exhaustive.vvp
+
+control-test:
+	mkdir -p sim_build/control
+	iverilog -g2012 -s control_busy_tb -o sim_build/control/control_busy.vvp control_busy_tb.sv $(SRC_DIR)/control.v
+	vvp sim_build/control/control_busy.vvp

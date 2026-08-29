@@ -16,7 +16,7 @@
  * Pinout:
  *   ui_in[0] = MOSI, ui_in[1] = CS (active low), ui_in[2] = SCLK
  *   uo_out   = result byte (selected by STORE)
- *   uio[1]   = ready (output), rest unused (SPI is receive-only;
+ *   uio[1]   = ready (sticky until next RUN), rest unused (SPI is receive-only;
  *              results are read via STORE on uo_out)
  */
 

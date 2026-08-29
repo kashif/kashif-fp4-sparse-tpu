@@ -19,9 +19,9 @@
  *          time instead of nine in parallel) followed by a commit
  *          cycle that latches the finished accumulator into
  *          result_mem and clears the PE for the next output. Total
-     *          latency ~45 cycles -- about 1.3% of the >=3456 clk cycles
-     *          needed to transfer a RUN's 36 operand instructions at
-     *          SCLK <= clk/6, so the
+ *          latency ~45 cycles -- about 1.3% of the >=3456 clk cycles
+ *          needed to transfer a RUN's 36 operand instructions at
+ *          SCLK <= clk/6, so the
  *          9x serialization is free in practice (this is why: with
  *          no skewed wavefront to feed, a single read port per
  *          memory replaces the old 3-concurrent-port design).
@@ -95,7 +95,8 @@ module control (
     reg       running;
     reg       commit;
 
-    wire is_run_issue = (opcode == RUN) && !running && !commit;
+    wire busy         = running || commit;
+    wire is_run_issue = (opcode == RUN) && !busy;
     wire last_output   = (cur_row == 2'd2) && (cur_col == 2'd2);
 
     always @(posedge clk or negedge rst_n) begin
@@ -114,13 +115,13 @@ module control (
             commit        <= 1'b0;
             ready_to_send <= 1'b0;
         end else begin
-            ready_to_send <= 1'b0;
             if (is_run_issue) begin
                 cur_row <= 2'd0;
                 cur_col <= 2'd0;
                 step    <= 2'd0;
                 running <= 1'b1;
                 commit  <= 1'b0;
+                ready_to_send <= 1'b0;
             end else if (running) begin
                 if (step == 2'd3) begin
                     running <= 1'b0;
@@ -171,8 +172,11 @@ module control (
     // ------------------------------------------------------------------
     // Write path
     // ------------------------------------------------------------------
-    wire load_a = is_load && !mem_select;
-    wire load_b = is_load &&  mem_select;
+    // Commands received while the compute engine is busy are ignored. At
+    // the documented SCLK limit a complete instruction is slower than RUN,
+    // but explicit gating makes the behavior safe even for a faulty host.
+    wire load_a = is_load && !mem_select && !busy;
+    wire load_b = is_load &&  mem_select && !busy;
 
     assign mema_data_in      = imm;
     assign mema_write_enable = load_a;
@@ -193,7 +197,7 @@ module control (
             store_row      <= 2'd0;
             store_col      <= 2'd0;
             store_byte_sel <= 1'b0;
-        end else if (is_store) begin
+        end else if (is_store && !busy) begin
             store_row      <= instruction[12:11];
             store_col      <= instruction[10:9];
             store_byte_sel <= instruction[13];

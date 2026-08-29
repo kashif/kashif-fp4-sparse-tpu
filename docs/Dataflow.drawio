@@ -21,7 +21,7 @@
           <mxGeometry x="620" y="120" width="240" height="70" as="geometry" />
         </mxCell>
 
-        <mxCell id="s_advance" value="last output (2,2)?&#10;no -&gt; advance (cur_row,cur_col)&#10;row-major, step=0, loop to ACCUMULATE&#10;yes -&gt; ready_to_send=1, done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="s_advance" value="last output (2,2)?&#10;no -&gt; advance (cur_row,cur_col)&#10;row-major, step=0, loop to ACCUMULATE&#10;yes -&gt; ready_to_send=1 (sticky until next RUN), done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="940" y="105" width="220" height="100" as="geometry" />
         </mxCell>
 

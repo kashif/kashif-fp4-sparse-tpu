@@ -13,7 +13,7 @@
           <mxGeometry x="40" y="300" width="130" height="70" as="geometry" />
         </mxCell>
 
-        <mxCell id="spi" value="SPI slave&#10;16-bit instruction&#10;(LSB-first, receive-only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="spi" value="SPI slave (single clk domain)&#10;synchronized MOSI / CS / SCLK&#10;16-bit LSB-first, receive-only&#10;SCLK &amp;lt;= clk/6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="240" y="290" width="140" height="90" as="geometry" />
         </mxCell>
 
@@ -78,7 +78,7 @@
         <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mux" target="uo">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e11" value="ready -&gt; uio[1]" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;dashed=1;" edge="1" parent="1" source="ctrl">
+        <mxCell id="e11" value="ready -&gt; uio[1]&#10;(sticky until next RUN)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;dashed=1;" edge="1" parent="1" source="ctrl">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="480" y="720" as="targetPoint" />
           </mxGeometry>

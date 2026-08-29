@@ -5,7 +5,7 @@ project:
   discord:      "kashf"
   description:  "One time-multiplexed PE computes a 3x3 output tile with 1:2-sparse E2M1 weights and INT8 activations, without a hardware multiplier. Dense E2M1-weight mode runs at half the sparse contraction rate; NVFP4/MXFP4 weight payloads require host-side activation quantization and scale handling."
   language:     "Verilog"
-  clock_hz:     5000000
+  clock_hz:     10000000
 
   tiles: "1x2"
   top_module:  "tt_um_kashif_fp4_sparse_tpu"
@@ -44,7 +44,7 @@ pinout:
 
   # Bidirectional pins
   uio[0]: ""
-  uio[1]: "ready (output)"
+  uio[1]: "ready (sticky until next RUN)"
   uio[2]: ""
   uio[3]: ""
   uio[4]: ""

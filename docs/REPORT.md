@@ -1,12 +1,14 @@
 # FP4 Sparse Mini-TPU — Engineering Report
 
-**Date:** 2026-08-26 (serialized single-PE revision; original 3x3 array 2026-07-15)
+**Date:** 2026-08-29 (single-clock SPI revision; original 3x3 array 2026-07-15)
 **Target:** Tiny Tapeout TTSKY26c, 1x2 tile, SkyWater SKY130A
 **Top module:** `tt_um_kashif_fp4_sparse_tpu`
-**Clock:** 5 MHz (SPI SCLK <= clk/6)
-**Result:** 11 cocotb tests passing; measured 70.1% GPL / 60.6%
-effective on 1x2 (down from 62.5% GPL / 53.6% effective on 2x2 for the
-original 9-PE parallel array — ~47% total chip area reduction)
+**Clock:** 10 MHz (SPI SCLK <= clk/6, about 1.67 MHz)
+**Result:** 12 cocotb tests, 16,384-case exhaustive PE test, controller
+busy/sticky-ready test, and 11 host tests passing. The preceding serialized-PE layout measured 70.1% GPL /
+60.6% effective on 1x2 (down from 62.5% GPL / 53.6% effective on 2x2 for
+the original 9-PE parallel array — ~47% total chip area reduction); physical
+signoff must be rerun for the single-clock SPI revision.
 
 ---
 
@@ -40,7 +42,7 @@ bit-for-bit.
 | Activation functions | Host-side (correct only after cross-tile accumulation) |
 | I/O | SPI, 16-bit instructions, receive-only; results via STORE on uo_out |
 | RUN latency | ~45 cycles (9 outputs x (4 accumulate + 1 commit)) |
-| Tile | 1x2 (measured 70.1% GPL / 60.6% effective) |
+| Tile | 1x2 (preceding revision measured 70.1% GPL / 60.6% effective; re-signoff pending) |
 
 ## 3. Architecture
 
@@ -128,11 +130,21 @@ See `Architecture.drawio` and `Dataflow.drawio`.
      real CI run (gds + gl_test + precheck, all green) at `tiles: "1x2"`.
 - **Receive-only SPI** (from the ternary chip): the MISO readback stream
   duplicated the STORE readout path; dropped for area.
-- **Safe SPI CDC.** The SCLK domain latches each completed word and toggles
-  a one-bit completion flag. A two-flop synchronizer carries that flag into
-  `clk`; the word has settled before control consumes it. CS deassertion
-  discards partial frames.
-- **CLOCK_PERIOD = 200 ns** in config.json matches the real 5 MHz clock.
+- **Single-clock SPI.** MOSI, CS, and SCLK pass through synchronizers and
+  edge detection; shifting, frame counting, and instruction delivery all
+  occur on `clk`. Raw external SCLK is never an internal clock. CS
+  deassertion discards every partial-frame length, and one CS assertion can
+  deliver at most one instruction. The contract is SCLK <= clk/6 and at
+  least four `clk` cycles of CS-high time between frames.
+- **Sticky completion and busy protection.** `ready` stays high from the
+  final commit until the next accepted RUN. LOAD, STORE, and another RUN
+  are ignored while computation is busy.
+- **10 MHz clock.** The former 5 MHz value came from `info.yaml` metadata,
+  not a derived design limit, and disagreed with the already-used 100 ns
+  physical-flow constraint. Metadata, RTL tests, and `config.json` now all
+  specify 10 MHz (`CLOCK_PERIOD = 100 ns`). Tiny Tapeout's platform maximum
+  is not the design's guaranteed frequency; the new RTL still requires a
+  fresh timing/layout signoff.
 - **Operand initialization.** Control, SPI, PE, and result state reset.
   Operand memories intentionally do not reset to save area, so software
   must load every operand it uses before the first RUN.
@@ -153,9 +165,10 @@ the matmul itself).
 | `test_known_matmul` | Hand-checked matmul, mixed E2M1 values, full INT8 range |
 | `test_select_bit_semantics` | select routes the value to k=2j or k=2j+1 |
 | `test_negative_zero` | E2M1 -0 (0x8) contributes exactly zero, either select |
+| `test_accumulator_extremes` | Exact -6144/+6144 bounds and near-limit mixed-sign cases |
 | `test_not_degenerate` | Equal-sum activations must differ (guards against w*sum collapse) |
 | `test_run_clears_accumulators` | Back-to-back RUNs don't double — exercises `result_mem` reuse across RUNs |
-| `test_spi_partial_frame_abort` | CS deassertion discards a 15-bit frame even if SCLK toggles while idle |
+| `test_spi_partial_frame_abort` | All 0..15-bit partial frames and reset mid-frame are discarded; clk/6 operation and sticky ready are checked |
 | `test_dense_e2m1_mode` | Dense mode ignores selects + odd slots; mode latched per RUN |
 | `test_random` | 12 randomized full-coverage trials, random mode per trial |
 | `test_nvfp4_four_over_six_dense` | 4/6 adaptive block scaling (arXiv:2512.02010): spec-derived NVFP4 quantizer (E4M3 RTN scales, E2M1 RTN values, MSE pick), paper's worked example, exact dequant over 4 dense RUNs |
@@ -167,6 +180,12 @@ synthesized netlist with VPWR/VGND wiring in `tb.v`. The SPI driver's
 post-instruction wait was widened from 12 to 60 cycles to cover RUN's new
 ~45-cycle worst case (was 8 cycles for the parallel array) — a testbench
 timing parameter only; it has no effect on real SPI/clock timing.
+`pe-test` independently exhausts both modes, both select values, all 16
+E2M1 nibbles, and all 256 activation bytes (16,384 products). The host test
+checks ISA encoders, signed 14-bit result decoding, validation, and the
+required scale-each-block-before-accumulating rule.
+`control-test` directly verifies busy-command rejection and sticky-ready
+behavior that a conforming, clk/6-limited SPI host cannot overlap with RUN.
 
 ## 6. File Structure
 
@@ -174,14 +193,16 @@ timing parameter only; it has no effect on real SPI/clock timing.
 src/
   project.v     # TT top level, SPI pin wiring, constant-pin FFs
   tpu.v         # control + memories + ONE PE + result memory + result mux
-  spi.v         # 16-bit instruction receiver (receive-only)
+  spi.v         # synchronized, single-clock 16-bit receiver
   control.v     # LOAD/RUN/STORE decode, (row,col,step) sequencer
   memory_a.v    # 3x8 INT8 activation memory, single-port read
   memory_b.v    # 3x4 sparse-code weight memory (5-bit), single-port read
   result_mem.v  # 9x14-bit result store, addressed by (row,col)
   pe.v          # shift-add dual-mode MAC (no multiplier), one instance
 test/
-  tb.v, test.py, Makefile
+  tb.v, test.py, pe_exhaustive_tb.sv, control_busy_tb.sv, test_host.py, Makefile
+software/
+  fp4_tpu.py    # ISA, result decode, block-scaling helpers
 docs/
   info.md, Architecture.drawio, Dataflow.drawio, REPORT.md
 ```

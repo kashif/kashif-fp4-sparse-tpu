@@ -101,41 +101,38 @@ def golden_dense_e2m1(A, wcodes):
 # SPI driver
 # ----------------------------------------------------------------------
 
-async def spi_send(dut, instr):
+async def spi_send(dut, instr, half_cycles=SCLK_HALF, post_cycles=60):
     """Bit-bang one 16-bit instruction, LSB-first, sampled on SCLK rising."""
     def drive(mosi, cs, sclk):
         dut.ui_in.value = (mosi << PIN_MOSI) | (cs << PIN_CS) | (sclk << PIN_SCLK)
 
     drive(0, 0, 0)
-    await ClockCycles(dut.clk, SCLK_HALF)
+    await ClockCycles(dut.clk, half_cycles)
     for i in range(16):
         bit = (instr >> i) & 1
         drive(bit, 0, 0)                      # setup MOSI while SCLK low
-        await ClockCycles(dut.clk, SCLK_HALF)
+        await ClockCycles(dut.clk, half_cycles)
         drive(bit, 0, 1)                      # rising edge samples the bit
-        await ClockCycles(dut.clk, SCLK_HALF)
+        await ClockCycles(dut.clk, half_cycles)
     drive(0, 1, 0)                            # CS high between instructions
-    # Leave time for the clk-domain data_ready pulse and execution.
+    # Leave time for clk-domain instruction delivery and execution.
     # RUN now time-multiplexes one PE across all 9 outputs: 1 issue
     # cycle + 9 x (4 accumulate + 1 commit) = 46 cycles worst case;
     # this gap covers it with margin.
-    await ClockCycles(dut.clk, 60)
+    await ClockCycles(dut.clk, post_cycles)
 
 
-async def spi_abort_after_15_bits(dut, instr):
+async def spi_abort_after_bits(dut, instr, n_bits):
     """Send an incomplete frame, deassert CS, then clock SCLK while idle.
 
-    A partial frame must be discarded rather than decoded when the old
-    bit-counter value is reset.  Fifteen bits are intentional: for RUN,
-    the omitted bit 15 is zero, so the partial buffer otherwise looks like
-    a complete RUN instruction.
+    Every length from 0 through 15 must be discarded rather than decoded.
     """
     def drive(mosi, cs, sclk):
         dut.ui_in.value = (mosi << PIN_MOSI) | (cs << PIN_CS) | (sclk << PIN_SCLK)
 
     drive(0, 0, 0)
     await ClockCycles(dut.clk, SCLK_HALF)
-    for i in range(15):
+    for i in range(n_bits):
         bit = (instr >> i) & 1
         drive(bit, 0, 0)
         await ClockCycles(dut.clk, SCLK_HALF)
@@ -150,6 +147,22 @@ async def spi_abort_after_15_bits(dut, instr):
     await ClockCycles(dut.clk, SCLK_HALF)
     drive(0, 1, 0)
     await ClockCycles(dut.clk, 60)
+
+
+async def spi_leave_partial_frame(dut, instr, n_bits):
+    """Leave CS asserted after shifting a prefix, for reset-mid-frame tests."""
+    def drive(mosi, cs, sclk):
+        dut.ui_in.value = (mosi << PIN_MOSI) | (cs << PIN_CS) | (sclk << PIN_SCLK)
+
+    drive(0, 0, 0)
+    await ClockCycles(dut.clk, SCLK_HALF)
+    for i in range(n_bits):
+        bit = (instr >> i) & 1
+        drive(bit, 0, 0)
+        await ClockCycles(dut.clk, SCLK_HALF)
+        drive(bit, 0, 1)
+        await ClockCycles(dut.clk, SCLK_HALF)
+    drive(0, 0, 0)
 
 
 async def hw_reset(dut):
@@ -201,7 +214,7 @@ def check(dut, got, expected, label):
 
 
 def start_clock(dut):
-    cocotb.start_soon(Clock(dut.clk, 200, unit="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 100, unit="ns").start())
 
 
 # ----------------------------------------------------------------------
@@ -274,6 +287,30 @@ async def test_negative_zero(dut):
 
 
 @cocotb.test()
+async def test_accumulator_extremes(dut):
+    """Explicitly hit signed product and accumulator boundaries."""
+    start_clock(dut)
+    await hw_reset(dut)
+
+    A = [[-128] * K,
+         [127] * K,
+         [-128, 127, -128, 127, -128, 127, -128, 127]]
+    wcodes = [
+        [0x07] * (K // 2),  # select even, +6 -> x2 code +12
+        [0x0F] * (K // 2),  # select even, -6 -> x2 code -12
+        [0x17] * (K // 2),  # select odd,  +6 -> x2 code +12
+    ]
+
+    results = await run_matmul(dut, A, wcodes)
+    expected = golden_matmul(A, wcodes)
+    check(dut, results, expected, "accumulator-extremes")
+    assert results[0] == [-6144, 6144, -6144]
+    assert results[1] == [6096, -6096, 6096]
+    assert results[2] == [-6144, 6144, 6096]
+    dut._log.info("accumulator extremes PASSED")
+
+
+@cocotb.test()
 async def test_not_degenerate(dut):
     """Two activation matrices with identical row sums must give
     different results — guards against the w*sum(acts) failure mode
@@ -321,7 +358,7 @@ async def test_run_clears_accumulators(dut):
 
 @cocotb.test()
 async def test_spi_partial_frame_abort(dut):
-    """Deasserting CS after 15 bits must discard the apparent RUN."""
+    """Every partial length is discarded; done is sticky for a full RUN."""
     start_clock(dut)
     await hw_reset(dut)
 
@@ -330,12 +367,37 @@ async def test_spi_partial_frame_abort(dut):
     wcodes = [[0x07] * (K // 2) for _ in range(N)]
     await load_operands(dut, A, wcodes)
 
-    await spi_abort_after_15_bits(dut, instr_run())
+    for n_bits in range(16):
+        await spi_abort_after_bits(dut, instr_run(), n_bits)
+        ready = (int(dut.uio_out.value) >> 1) & 1
+        assert ready == 0, f"aborted {n_bits}-bit RUN raised ready"
+
     results = [[await read_result(dut, i, c) for c in range(N)]
                for i in range(N)]
     assert results == [[0] * N for _ in range(N)], (
-        f"aborted 15-bit RUN executed unexpectedly: {results}")
-    dut._log.info("partial SPI frame abort PASSED")
+        f"an aborted RUN executed unexpectedly: {results}")
+
+    # Reset in the middle of a frame must clear receiver and compute state.
+    await spi_leave_partial_frame(dut, instr_run(), 8)
+    await hw_reset(dut)
+    assert ((int(dut.uio_out.value) >> 1) & 1) == 0
+
+    # Exercise the documented clk/6 limit and observe sticky completion.
+    await spi_send(dut, instr_run(), half_cycles=3, post_cycles=8)
+    assert ((int(dut.uio_out.value) >> 1) & 1) == 0, (
+        "ready did not clear when RUN was accepted")
+    await ClockCycles(dut.clk, 50)
+    assert ((int(dut.uio_out.value) >> 1) & 1) == 1, (
+        "ready did not become sticky after RUN")
+    await ClockCycles(dut.clk, 20)
+    assert ((int(dut.uio_out.value) >> 1) & 1) == 1, (
+        "ready did not remain asserted for host polling")
+
+    results = [[await read_result(dut, i, c) for c in range(N)]
+               for i in range(N)]
+    check(dut, results, golden_matmul(A, wcodes), "full-run-after-aborts")
+    assert ((int(dut.uio_out.value) >> 1) & 1) == 1
+    dut._log.info("SPI abort, clk/6, and sticky-ready PASSED")
 
 
 @cocotb.test()
