@@ -81,7 +81,7 @@ module pe (
             if (clr)
                 c_reg <= 14'sd0;
             else if (we)
-                c_reg <= c_reg + prod;
+                c_reg <= c_reg + {{2{prod[11]}}, prod};
             if (we) begin
                 a_reg <= a_in;
                 b_reg <= b_in;

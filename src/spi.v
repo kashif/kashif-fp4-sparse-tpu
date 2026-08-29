@@ -37,7 +37,7 @@ module spi (
     wire sclk_rising = (sclk_sync[2:1] == 2'b01);
     wire cs_active   = !cs_sync[2];
 
-    reg [15:0] shift_reg;
+    reg [14:0] shift_reg;
     reg [3:0]  bit_counter;
     reg        frame_complete;
     reg [15:0] completed_word;
@@ -57,7 +57,7 @@ module spi (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            shift_reg      <= 16'd0;
+            shift_reg      <= 15'd0;
             bit_counter    <= 4'd0;
             frame_complete <= 1'b0;
             completed_word <= 16'd0;
@@ -69,13 +69,13 @@ module spi (
                 // CS high terminates the current transaction. A partial word
                 // is discarded; a completed word remains available only via
                 // its one-cycle data_ready pulse.
-                shift_reg      <= 16'd0;
+                shift_reg      <= 15'd0;
                 bit_counter    <= 4'd0;
                 frame_complete <= 1'b0;
             end else if (sclk_rising && !frame_complete) begin
-                shift_reg <= {mosi_sync[2], shift_reg[15:1]};
+                shift_reg <= {mosi_sync[2], shift_reg[14:1]};
                 if (bit_counter == 4'd15) begin
-                    completed_word <= {mosi_sync[2], shift_reg[15:1]};
+                    completed_word <= {mosi_sync[2], shift_reg[14:0]};
                     bit_counter    <= 4'd0;
                     frame_complete <= 1'b1;
                     data_ready     <= 1'b1;

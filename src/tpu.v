@@ -115,6 +115,11 @@ module tpu (
     // One PE, time-multiplexed across all 9 outputs. a_out/b_out are
     // systolic pass-through ports for neighboring PEs -- unused here
     // (no neighbors), left unconnected so synthesis drops a_reg/b_reg.
+    // Retain named connections without Verilator's empty-pin warning;
+    // synthesis removes these legacy systolic pass-through nets.
+    wire [15:0] unused_a_out;
+    wire [4:0]  unused_b_out;
+
     pe pe_inst (
         .clk    (clk),
         .rst_n  (rst_n),
@@ -123,8 +128,8 @@ module tpu (
         .dense  (dense_mode),
         .a_in   (pe_a_in),
         .b_in   (pe_b_in),
-        .a_out  (),
-        .b_out  (),
+        .a_out  (unused_a_out),
+        .b_out  (unused_b_out),
         .c_out  (pe_c_out)
     );
 

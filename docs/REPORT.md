@@ -145,6 +145,11 @@ See `Architecture.drawio` and `Dataflow.drawio`.
   specify 10 MHz (`CLOCK_PERIOD = 100 ns`). Tiny Tapeout's platform maximum
   is not the design's guaranteed frequency; the new RTL still requires a
   fresh timing/layout signoff.
+- **Physical-flow headroom.** The single-clock SPI revision initially
+  reached CTS with more than 75 ns setup slack, but a 0.10 ns optional hold
+  margin inserted 443 buffers (+18.1% area) and exhausted four placement
+  sites. The margin is now 0.05 ns and placement target density 80%; final
+  routed STA remains the acceptance criterion.
 - **Operand initialization.** Control, SPI, PE, and result state reset.
   Operand memories intentionally do not reset to save area, so software
   must load every operand it uses before the first RUN.
