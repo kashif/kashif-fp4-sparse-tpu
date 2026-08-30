@@ -1,92 +1,36 @@
-<mxfile host="app.diagrams.net" type="device">
-  <diagram id="arch" name="Architecture">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="740" math="0" shadow="0">
+<mxfile host="app.diagrams.net" modified="2026-08-30T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="architecture" name="Architecture">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1250" pageHeight="760" math="0" shadow="0">
       <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-
-        <mxCell id="title" value="FP4 Sparse Mini-TPU — Architecture (Tiny Tapeout 1x2 tile, time-multiplexed single PE)" style="text;html=1;fontSize=17;fontStyle=1;align=center;" vertex="1" parent="1">
-          <mxGeometry x="140" y="20" width="820" height="30" as="geometry" />
-        </mxCell>
-
-        <mxCell id="host" value="SPI Host&#10;(RP2040 / testbench)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="40" y="300" width="130" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="spi" value="SPI slave (single clk domain)&#10;synchronized MOSI / CS / SCLK&#10;16-bit LSB-first, receive-only&#10;SCLK &amp;lt;= clk/6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
-          <mxGeometry x="240" y="290" width="140" height="90" as="geometry" />
-        </mxCell>
-
-        <mxCell id="ctrl" value="Control unit / sequencer&#10;LOAD / RUN / STORE&#10;(cur_row, cur_col, step) walks&#10;all 9 outputs, ~45 cycles/RUN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-          <mxGeometry x="450" y="270" width="200" height="120" as="geometry" />
-        </mxCell>
-
-        <mxCell id="mema" value="Memory A (activations)&#10;3 rows x 8 INT8&#10;SINGLE port: addr = (row, pair)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
-          <mxGeometry x="720" y="120" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="memb" value="Memory B (weights)&#10;3 cols x 4 codes {select, e2m1}&#10;SINGLE port: addr = (col, pair)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
-          <mxGeometry x="720" y="460" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="pe" value="ONE PE, time-multiplexed&#10;shift-add MAC, NO multiplier&#10;same datapath as before, reused&#10;9x/RUN instead of 9 spatial copies&#10;14-bit exact accumulator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
-          <mxGeometry x="720" y="260" width="200" height="140" as="geometry" />
-        </mxCell>
-
-        <mxCell id="resmem" value="Result memory&#10;9 x 14-bit (row-major)&#10;written once per output, on commit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-          <mxGeometry x="720" y="580" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="mux" value="Result mux&#10;STORE {row, col, byte_sel}&#10;14-bit acc -&gt; 2 bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="720" y="680" width="200" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="uo" value="uo_out[7:0]&#10;result byte" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="980" y="685" width="110" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e1" value="ui[0] MOSI, ui[1] CS, ui[2] SCLK" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="host" target="spi">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e2" value="instruction[15:0]&#10;(1-cycle pulse)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="spi" target="ctrl">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e3" value="write / single-port read&#10;addr = (cur_row, step)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=0;" edge="1" parent="1" source="ctrl" target="mema">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e4" value="write / single-port read&#10;addr = (cur_col, step)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=1;" edge="1" parent="1" source="ctrl" target="memb">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e5" value="a_in: ONE INT8 pair (16b)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mema" target="pe">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e6" value="b_in: ONE 5-bit code" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="memb" target="pe">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e7" value="pe_we / pe_clr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="ctrl" target="pe">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e8" value="c_out: 14-bit (write on commit)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="pe" target="resmem">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e8b" value="write addr = (cur_row, cur_col)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="ctrl" target="resmem">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e9" value="read addr = (store_row, store_col)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="resmem" target="mux">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mux" target="uo">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e11" value="ready -&gt; uio[1]&#10;(sticky until next RUN)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;dashed=1;" edge="1" parent="1" source="ctrl">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="480" y="720" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-
-        <mxCell id="note" value="Why one PE instead of nine: RUN's ~45-cycle latency (9 outputs x 4 accumulate + 1 commit) is about 1.3% of the &gt;=3456 clk cycles needed to transfer all 36 operand instructions at SCLK &lt;= clk/6 — spatial parallelism bought nothing but area. Removing it also removes the reason the memories needed 3 concurrent read ports (the old skewed wavefront): now one port each. Numerics are byte-for-byte unchanged — same E2M1 shift-add PE datapath (see pe.v), same 1:2 sparsity, same K=8/dense K=4, same exact 14-bit accumulation; only the spatial-vs-temporal execution strategy changed. Measured: 32.8% GPL / 28.6% effective on 2x2 tiles -> 70.1% GPL / 60.6% effective on 1x2, both under the fleet's 65% safe-placement rule; area fell ~47% (38889 -&gt; 20760 sq-um-equivalent) vs the 9-PE parallel array." style="text;html=1;whiteSpace=wrap;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="40" y="80" width="640" height="150" as="geometry" />
-        </mxCell>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="FP4 Sparse TPU — Tiny Tapeout Architecture" style="text;html=1;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="150" y="15" width="950" height="35" as="geometry"/></mxCell>
+        <mxCell id="clock_note" value="Single clock domain • clk = 10 MHz • SPI inputs synchronized internally • SCLK ≤ clk/6" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1"><mxGeometry x="245" y="60" width="760" height="42" as="geometry"/></mxCell>
+        <mxCell id="host" value="Host / testbench&#xa;SPI master" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="30" y="250" width="135" height="72" as="geometry"/></mxCell>
+        <mxCell id="spi" value="SPI receiver&#xa;16-bit frame&#xa;(receive-only)" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="210" y="230" width="175" height="112" as="geometry"/></mxCell>
+        <mxCell id="control" value="Control FSM&#xa;LOAD / RUN / STORE&#xa;row, col, step counters" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="440" y="220" width="200" height="132" as="geometry"/></mxCell>
+        <mxCell id="mem_a" value="Activation memory A&#xa;3 rows × 8 INT8 values&#xa;16-bit pair read port" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="700" y="85" width="220" height="90" as="geometry"/></mxCell>
+        <mxCell id="pe" value="FP4 processing element&#xa;activation select&#xa;shift-add product&#xa;14-bit accumulator" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="700" y="220" width="220" height="150" as="geometry"/></mxCell>
+        <mxCell id="mem_b" value="Weight memory B&#xa;3 columns × 4 FP4 codes&#xa;5-bit code read port" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="700" y="425" width="220" height="90" as="geometry"/></mxCell>
+        <mxCell id="result_mem" value="Result memory&#xa;3 × 3 × 14 bits" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="985" y="225" width="190" height="90" as="geometry"/></mxCell>
+        <mxCell id="result_mux" value="STORE read mux&#xa;row / col / byte" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="985" y="385" width="190" height="78" as="geometry"/></mxCell>
+        <mxCell id="output" value="uo_out[7:0]&#xa;selected result byte" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="985" y="520" width="190" height="64" as="geometry"/></mxCell>
+        <mxCell id="ready" value="uio_out[1] = ready&#xa;sticky after final commit&#xa;cleared by reset or next RUN" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="440" y="425" width="200" height="90" as="geometry"/></mxCell>
+        <mxCell id="legend" value="Solid arrows: data&#xa;Dashed arrows: control / address" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fillColor=#ffffff;strokeColor=#999999;dashed=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="30" y="435" width="175" height="62" as="geometry"/></mxCell>
+        <mxCell id="summary" value="Per output: 4 accumulate cycles + 1 commit cycle. Nine row-major outputs use 45 compute cycles after RUN acceptance. The single PE and single-port operand memories avoid multi-PE read conflicts; larger tiling and cross-block accumulation remain host-side." style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1"><mxGeometry x="175" y="630" width="900" height="76" as="geometry"/></mxCell>
+        <mxCell id="e_host_spi" value="MOSI / CS / SCLK" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host" target="spi"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_spi_control" value="instruction[15:0]&#xa;one clk pulse" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="spi" target="control"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_a" value="LOAD A write / RUN address" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="control" target="mem_a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_b" value="LOAD B write / RUN address" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="control" target="mem_b"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_a_pe" value="activation pair [15:0]" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="mem_a" target="pe"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_b_pe" value="weight code [4:0]" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="mem_b" target="pe"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_pe" value="pe_we / pe_clr / dense" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="control" target="pe"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_pe_result" value="14-bit accumulated result" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="pe" target="result_mem"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_result" value="commit + write row/col" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="control" target="result_mem"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="540" y="195"/><mxPoint x="1080" y="195"/></Array></mxGeometry></mxCell>
+        <mxCell id="e_result_mux" value="selected 14-bit result" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="result_mem" target="result_mux"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_mux" value="STORE row/col/byte" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="control" target="result_mux"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="665" y="405"/><mxPoint x="955" y="405"/></Array></mxGeometry></mxCell>
+        <mxCell id="e_mux_output" value="8-bit data" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="result_mux" target="output"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_control_ready" value="status" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="control" target="ready"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

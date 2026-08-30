@@ -2,7 +2,7 @@
 SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
-SRC_DIR = $(PWD)/../src
+SRC_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../src)
 PROJECT_SOURCES = project.v tpu.v spi.v control.v memory_a.v memory_b.v result_mem.v pe.v
 
 ifneq ($(GATES),yes)
